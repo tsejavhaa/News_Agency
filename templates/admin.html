@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — The Agency</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#0d0d0d; --paper:#f7f4ef; --accent:#c8102e; --green:#2e7d32; --muted:#666; --serif:'Playfair Display',Georgia,serif; --sans:'Source Sans 3',system-ui,sans-serif; }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#111;color:#e0ddd8;font-family:var(--sans);min-height:100vh;}
+  a{color:inherit;text-decoration:none;}
+
+  .topbar{background:#000;padding:1rem 2rem;display:flex;align-items:center;gap:1rem;border-bottom:2px solid var(--accent);}
+  .logo{font-family:var(--serif);font-size:1.3rem;font-weight:900;text-transform:uppercase;}
+  .logo span{color:var(--accent);}
+  .back{margin-left:auto;font-size:0.75rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#777;}
+  .back:hover{color:#fff;}
+
+  .page{max-width:1100px;margin:2.5rem auto;padding:0 2rem;}
+  h1{font-family:var(--serif);font-size:2rem;font-weight:900;margin-bottom:2rem;letter-spacing:-0.01em;}
+
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:1.5rem;margin-bottom:3rem;}
+  .card{background:#1a1a1a;border:1px solid #2a2a2a;padding:1.5rem;}
+  .card-num{font-family:var(--serif);font-size:2.5rem;font-weight:700;color:var(--accent);line-height:1;}
+  .card-label{font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:#777;margin-top:0.4rem;}
+
+  .section{margin-bottom:2.5rem;}
+  .section h2{font-family:var(--serif);font-size:1.2rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:1rem;border-bottom:1px solid #2a2a2a;padding-bottom:0.6rem;}
+
+  .status-row{display:flex;align-items:center;gap:1rem;padding:0.8rem 1rem;background:#1a1a1a;border:1px solid #2a2a2a;margin-bottom:0.5rem;}
+  .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .dot.green{background:#4caf50;box-shadow:0 0 6px #4caf50;}
+  .dot.red{background:#f44336;}
+  .status-label{font-size:0.82rem;}
+  .status-val{margin-left:auto;font-size:0.78rem;font-weight:600;color:#aaa;}
+
+  .cat-table{width:100%;border-collapse:collapse;}
+  .cat-table td{padding:0.55rem 0.8rem;border-bottom:1px solid #1e1e1e;font-size:0.85rem;}
+  .cat-table td:last-child{text-align:right;font-weight:600;color:var(--accent);}
+  .cat-bar{height:4px;background:#2a2a2a;margin-top:3px;}
+  .cat-bar-fill{height:100%;background:var(--accent);}
+
+  .btn{display:inline-flex;align-items:center;gap:0.5rem;padding:0.7rem 1.4rem;font-size:0.8rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;border:none;background:var(--accent);color:#fff;transition:opacity 0.2s;}
+  .btn:hover{opacity:0.85;}
+  .btn-ghost{background:transparent;border:1px solid #444;color:#aaa;}
+  .btn-ghost:hover{border-color:#aaa;color:#fff;}
+  #pipeline-result{margin-top:0.8rem;font-size:0.8rem;color:#aaa;display:none;}
+
+  .model-list{display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.5rem;}
+  .model-chip{background:#2a2a2a;padding:0.3rem 0.7rem;font-size:0.72rem;letter-spacing:0.05em;border-radius:2px;}
+  .model-chip.active{background:var(--accent);color:#fff;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">The <span>Agency</span> · Admin</div>
+  <a href="/" class="back">← View Site</a>
+</div>
+
+<div class="page">
+  <h1>Dashboard</h1>
+
+  <!-- Stats cards -->
+  <div class="cards">
+    <div class="card">
+      <div class="card-num">{{ stats.total_articles }}</div>
+      <div class="card-label">Total Articles</div>
+    </div>
+    <div class="card">
+      <div class="card-num">{{ stats.published_articles }}</div>
+      <div class="card-label">Published</div>
+    </div>
+    <div class="card">
+      <div class="card-num">{{ stats.duplicates_caught }}</div>
+      <div class="card-label">Duplicates Caught</div>
+    </div>
+    <div class="card">
+      <div class="card-num">{{ stats.sources }}</div>
+      <div class="card-label">News Sources</div>
+    </div>
+  </div>
+
+  <!-- System status -->
+  <div class="section">
+    <h2>System Status</h2>
+    <div class="status-row">
+      <div class="dot green"></div>
+      <span class="status-label">FastAPI Web Server</span>
+      <span class="status-val">Running on :8000</span>
+    </div>
+    <div class="status-row">
+      <div class="dot green"></div>
+      <span class="status-label">SQLite Database</span>
+      <span class="status-val">database/news.db</span>
+    </div>
+    <div class="status-row">
+      <div class="dot {{ 'green' if ollama.available else 'red' }}"></div>
+      <span class="status-label">Ollama LLM ({{ ollama.current_model }})</span>
+      <span class="status-val">{{ 'Connected' if ollama.available else 'Not Running — Start with: ollama serve' }}</span>
+    </div>
+    <div class="status-row">
+      <div class="dot green"></div>
+      <span class="status-label">News Collector Agent</span>
+      <span class="status-val">Scheduled every 30 min</span>
+    </div>
+    <div class="status-row">
+      <div class="dot green"></div>
+      <span class="status-label">Image Processor</span>
+      <span class="status-val">Max {{ 800 }}×{{ 600 }}px · JPEG {{ 85 }}%</span>
+    </div>
+  </div>
+
+  <!-- Ollama models -->
+  {% if ollama.available_models %}
+  <div class="section">
+    <h2>Available Ollama Models</h2>
+    <div class="model-list">
+      {% for m in ollama.available_models %}
+      <span class="model-chip {{ 'active' if ollama.current_model in m }}">{{ m }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Category breakdown -->
+  {% if stats.by_category %}
+  <div class="section">
+    <h2>Articles by Category</h2>
+    {% set max_count = stats.by_category.values() | max %}
+    <table class="cat-table">
+      {% for cat, count in stats.by_category.items() %}
+      <tr>
+        <td style="width:160px;">{{ cat }}</td>
+        <td>
+          <div class="cat-bar">
+            <div class="cat-bar-fill" style="width:{{ (count / max_count * 100)|int }}%"></div>
+          </div>
+        </td>
+        <td>{{ count }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- Manual trigger -->
+  <div class="section">
+    <h2>Pipeline Control</h2>
+    <p style="font-size:0.85rem;color:#777;margin-bottom:1rem;">
+      Manually trigger the full pipeline: collect → deduplicate → edit → publish
+    </p>
+    <button class="btn" onclick="triggerPipeline()">▶ Run Pipeline Now</button>
+    <a href="/api/stats" target="_blank" class="btn btn-ghost" style="margin-left:0.75rem;">API Stats ↗</a>
+    <div id="pipeline-result"></div>
+  </div>
+</div>
+
+<script>
+async function triggerPipeline() {
+  const btn = document.querySelector('.btn');
+  const result = document.getElementById('pipeline-result');
+  btn.disabled = true;
+  btn.textContent = '⟳ Running...';
+  result.style.display = 'none';
+  try {
+    const res = await fetch('/api/pipeline/run', { method: 'POST' });
+    const data = await res.json();
+    result.textContent = `✓ ${data.status} at ${data.timestamp}`;
+    result.style.display = 'block';
+    result.style.color = '#4caf50';
+  } catch (e) {
+    result.textContent = `✗ Error: ${e.message}`;
+    result.style.display = 'block';
+    result.style.color = '#f44336';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Run Pipeline Now';
+  }
+}
+</script>
+</body>
+</html>
