@@ -39,6 +39,7 @@ from tqdm import tqdm
 ROOT        = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_DIR      = os.path.join(ROOT, "database")
 MASTER_FILE = os.path.join(DB_DIR, "master_articles.json")
+STATS_FILE  = os.path.join(DB_DIR, "pipeline_stats.json")
 LOG_FILE    = os.path.join(DB_DIR, "data_manager.log")
 SCRAPER_DIR = os.path.join(ROOT, "agents", "scraper")
 
@@ -274,12 +275,17 @@ def ollama_available() -> bool:
         return False
 
 
-def ollama_is_dup(ta: str, da: str, tb: str, db: str) -> tuple[bool, float]:
+def ollama_is_dup(ta: str, tb: str) -> tuple[bool, float]:
+    """
+    Title-only comparison — much faster than sending full descriptions.
+    llama3.2:1b only needs titles to judge if two articles cover the same story.
+    Timeout 8s — if the model is slower than that, treat as non-duplicate.
+    """
     prompt = (
-        f"Are these two news articles about the same story?\n\n"
-        f"Article 1 — Title: {ta[:120]}\nSummary: {da[:200]}\n\n"
-        f"Article 2 — Title: {tb[:120]}\nSummary: {db[:200]}\n\n"
-        f'Reply ONLY with JSON: {{"duplicate": true/false, "confidence": 0.0-1.0}}'
+        f'Do these two news headlines cover the same story?\n'
+        f'A: "{ta[:120]}"\n'
+        f'B: "{tb[:120]}"\n'
+        f'Reply ONLY: {{"duplicate":true/false,"confidence":0.0-1.0}}'
     )
     try:
         r = requests.post(
@@ -288,9 +294,13 @@ def ollama_is_dup(ta: str, da: str, tb: str, db: str) -> tuple[bool, float]:
                 "model":   OLLAMA_MODEL,
                 "prompt":  prompt,
                 "stream":  False,
-                "options": {"temperature": 0.0, "num_predict": 60},
+                "options": {
+                    "temperature": 0.0,
+                    "num_predict": 32,   # just need the tiny JSON
+                    "num_ctx":     512,  # small context = faster
+                },
             },
-            timeout=30,
+            timeout=8,
         )
         text = r.json().get("response", "")
         m = re.search(r'\{.*?\}', text, re.DOTALL)
@@ -318,19 +328,33 @@ def jaccard(a: str, b: str) -> float:
 # ─────────────────────────────────────────────────────────────
 
 def deduplicate(articles: list[dict], log: Logger, use_llm: bool) -> dict:
-    total    = len(articles)
-    removed  = set()
-    dup_log  = []   # (kept_idx, dropped_idx, confidence, method)
+    """
+    Three-tier dedup:
+      Tier 1 — URL exact match          → instant duplicate
+      Tier 2 — Jaccard ≥ 0.75          → duplicate (no LLM needed)
+      Tier 3 — Jaccard 0.50–0.74       → LLM title-only check (parallel, 8s timeout)
 
-    llm_calls   = 0
-    llm_total   = 0.0
-    llm_times   = []
+    Parallel LLM calls via ThreadPoolExecutor so we don't sit idle
+    waiting for Ollama one-at-a-time.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    total   = len(articles)
+    removed = set()
+    dup_log = []
+
+    llm_calls = 0
+    llm_total = 0.0
+    llm_times = []
 
     log.log(f"\n  Comparing {total:,} articles...")
 
+    # ── Pass 1: URL + Jaccard (instant, no LLM) ───────────────
+    candidates = []   # pairs to send to LLM: (i, j)
+
     bar = tqdm(
         total=total,
-        desc="    Dedup scan  ",
+        desc="    Pass 1/2    ",
         unit=" art",
         colour="yellow",
         bar_format="{l_bar}{bar:28}{r_bar}",
@@ -343,10 +367,10 @@ def deduplicate(articles: list[dict], log: Logger, use_llm: bool) -> dict:
         if i in removed:
             continue
 
-        a      = articles[i]
+        a       = articles[i]
         title_a = a.get("title", "")
-        desc_a  = a.get("description", "")
         url_a   = (a.get("url") or "").rstrip("/")
+        desc_a  = a.get("description", "")
 
         for j in range(i + 1, total):
             if j in removed:
@@ -354,10 +378,10 @@ def deduplicate(articles: list[dict], log: Logger, use_llm: bool) -> dict:
 
             b       = articles[j]
             title_b = b.get("title", "")
-            desc_b  = b.get("description", "")
             url_b   = (b.get("url") or "").rstrip("/")
+            desc_b  = b.get("description", "")
 
-            # Exact URL match
+            # Tier 1: exact URL
             if url_a and url_a == url_b:
                 keep, drop = (i, j) if len(desc_a) >= len(desc_b) else (j, i)
                 removed.add(drop)
@@ -365,33 +389,68 @@ def deduplicate(articles: list[dict], log: Logger, use_llm: bool) -> dict:
                 continue
 
             sim = jaccard(title_a, title_b)
-            if sim < 0.45:
+            if sim < 0.50:
                 continue
 
-            # Very high similarity → no LLM needed
-            if sim >= 0.80:
+            # Tier 2: very high Jaccard
+            if sim >= 0.75:
                 keep, drop = (i, j) if len(desc_a) >= len(desc_b) else (j, i)
                 removed.add(drop)
                 dup_log.append((keep, drop, sim, "jaccard-high"))
                 continue
 
-            # Medium similarity → LLM verification
+            # Tier 3: borderline — queue for LLM
             if use_llm:
-                t0 = time.time()
-                is_dup, conf = ollama_is_dup(title_a, desc_a, title_b, desc_b)
-                elapsed = time.time() - t0
-                llm_calls   += 1
-                llm_total   += elapsed
+                candidates.append((i, j, sim))
+
+    bar.close()
+
+    # ── Pass 2: LLM on candidates (parallel) ──────────────────
+    if use_llm and candidates:
+        log.log(f"\n  LLM check on {len(candidates)} borderline pairs"
+                f" (parallel, 8s timeout each)...")
+
+        llm_bar = tqdm(
+            total=len(candidates),
+            desc="    Pass 2/2    ",
+            unit=" pair",
+            colour="blue",
+            bar_format="{l_bar}{bar:28}{r_bar}",
+            dynamic_ncols=True,
+            leave=True,
+        )
+
+        def check_pair(args):
+            i, j, sim = args
+            ta = articles[i].get("title", "")
+            tb = articles[j].get("title", "")
+            t0 = time.time()
+            is_dup, conf = ollama_is_dup(ta, tb)
+            elapsed = time.time() - t0
+            return i, j, is_dup, conf, elapsed
+
+        # 3 workers — llama3.2:1b handles ~3 concurrent calls well
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = {pool.submit(check_pair, c_): c_ for c_ in candidates}
+            for future in as_completed(futures):
+                i, j, is_dup, conf, elapsed = future.result()
+                llm_calls += 1
+                llm_total += elapsed
                 llm_times.append(elapsed)
-                bar.set_postfix_str(
-                    f"LLM:{llm_calls} last:{elapsed:.1f}s", refresh=True
+                llm_bar.update(1)
+                llm_bar.set_postfix_str(
+                    f"last:{elapsed:.1f}s avg:{llm_total/llm_calls:.1f}s",
+                    refresh=True,
                 )
-                if is_dup and conf >= 0.70:
+
+                if is_dup and conf >= 0.70 and i not in removed and j not in removed:
+                    desc_a = articles[i].get("description", "")
+                    desc_b = articles[j].get("description", "")
                     keep, drop = (i, j) if len(desc_a) >= len(desc_b) else (j, i)
                     removed.add(drop)
                     dup_log.append((keep, drop, conf, "llm"))
 
-    bar.close()
+        llm_bar.close()
 
     clean = [a for idx, a in enumerate(articles) if idx not in removed]
 
@@ -427,13 +486,13 @@ def report(scrape_stats: list[dict], ds: dict,
     total_new  = total_skip = 0
     total_time = 0.0
     for s in scrape_stats:
-        tag = c(RED, " ERR") if s["error"] else c(GREEN, "  OK")
-        new_count = c(GREEN, f"+{s['new']:,}")
+        tag     = c(RED, " ERR") if s["error"] else c(GREEN, "  OK")
+        new_str = c(GREEN, f"+{s['new']:,}")
         log.log(
             f"  {s['source']:<16}"
             f"{s['before']:>7,}"
-            f"  {new_count:>6}"
-            f"{s['skipped']:>8,}"
+            f"  {new_str}"
+            f"  {s['skipped']:>8,}"
             f"  {s['duration']:>5.1f}s"
             f"  [{tag}]"
         )
@@ -441,13 +500,13 @@ def report(scrape_stats: list[dict], ds: dict,
         total_skip += s["skipped"]
         total_time += s["duration"]
 
-    log.log(f"  {'-'*52}")
     total_new_str = c(GREEN, f"+{total_new:,}")
+    log.log(f"  {'-'*52}")
     log.log(
         f"  {'TOTAL':<16}"
         f"{'':>7}"
-        f"  {total_new_str:>6}"
-        f"{total_skip:>8,}"
+        f"  {total_new_str}"
+        f"  {total_skip:>8,}"
         f"  {total_time:>5.1f}s"
     )
 
@@ -558,8 +617,47 @@ def main():
         json.dump(ds["clean_articles"], f, indent=2, ensure_ascii=False)
     log.log(c(GREEN, f"  ✓ {ds['clean_count']:,} articles → {MASTER_FILE}"))
 
+    # Save pipeline stats for dashboard
+    total_wall = time.time() - wall_start
+    stats_payload = {
+        "run_at":          datetime.now().isoformat(),
+        "wall_seconds":    round(total_wall, 1),
+        "scrape_seconds":  round(sum(s["duration"] for s in scrape_stats), 1),
+        "llm_seconds":     round(ds["llm_total_s"], 1),
+        "llm_calls":       ds["llm_calls"],
+        "llm_model":       OLLAMA_MODEL,
+        "total_articles":  ds["clean_count"],
+        "duplicates_removed": ds["removed"],
+        "sources": [
+            {
+                "name":      s["source"],
+                "before":    s["before"],
+                "after":     s["after"],
+                "new":       s["new"],
+                "skipped":   s["skipped"],
+                "duration":  round(s["duration"], 1),
+                "error":     s["error"],
+                "timestamp": datetime.now().isoformat(),
+            }
+            for s in scrape_stats
+        ],
+        "dedup": {
+            "total_input":  ds["total_input"],
+            "duplicates":   ds["duplicates"],
+            "removed":      ds["removed"],
+            "clean_count":  ds["clean_count"],
+            "methods":      {
+                method: sum(1 for _, _, _, m in ds["dup_detail"] if m == method)
+                for method in set(m for _, _, _, m in ds["dup_detail"])
+            },
+        },
+    }
+    with open(STATS_FILE, "w", encoding="utf-8") as f:
+        json.dump(stats_payload, f, indent=2, ensure_ascii=False)
+    log.log(c(GREEN, f"  ✓ Pipeline stats → {STATS_FILE}"))
+
     # Phase 5: report
-    report(scrape_stats, ds, time.time() - wall_start, log, use_llm)
+    report(scrape_stats, ds, total_wall, log, use_llm)
     log.close()
 
 
