@@ -31,7 +31,7 @@ Editorial-style local news dashboard for scraped articles from BBC, CNN, and Al 
   - specific daily time
 - Manual pipeline trigger from `/admin`
 
-![](./static/news_agency_video.mp4)
+![](/static/news_agency_video.mp4)
 
 ## Data model used by the site
 
