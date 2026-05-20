@@ -40,6 +40,7 @@ ROOT        = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_DIR      = os.path.join(ROOT, "database")
 MASTER_FILE = os.path.join(DB_DIR, "master_articles.json")
 STATS_FILE  = os.path.join(DB_DIR, "pipeline_stats.json")
+PROGRESS_FILE = os.path.join(DB_DIR, "pipeline_progress.json")
 LOG_FILE    = os.path.join(DB_DIR, "data_manager.log")
 SCRAPER_DIR = os.path.join(ROOT, "agents", "scraper")
 
@@ -86,6 +87,18 @@ ANSI_RE = re.compile(r"\033\[[0-9;]*m")
 def strip_ansi(s): return ANSI_RE.sub("", s)
 
 
+def atomic_write_json(path: str, payload: dict):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def count_words(text: str) -> int:
+    return len(re.findall(r"\w+", text or ""))
+
+
 # ─────────────────────────────────────────────────────────────
 # Logger — stdout + file
 # ─────────────────────────────────────────────────────────────
@@ -104,6 +117,232 @@ class Logger:
     def close(self):
         self._f.write(f"Ended: {datetime.now().isoformat()}\n")
         self._f.close()
+
+
+class ProgressTracker:
+    def __init__(self, path: str, scrapers: list[dict]):
+        self.path = path
+        self.payload = {
+            "run_id": datetime.now().strftime("%Y%m%d%H%M%S"),
+            "status": "idle",
+            "started_at": None,
+            "finished_at": None,
+            "current_phase": "idle",
+            "phase_label": "Idle",
+            "phase_detail": "",
+            "overall_percent": 0,
+            "use_llm": False,
+            "sources": [
+                {
+                    "name": scraper["name"],
+                    "status": "pending",
+                    "before": 0,
+                    "after": 0,
+                    "new": 0,
+                    "skipped": 0,
+                    "duration": 0.0,
+                    "processed": 0,
+                    "total": 0,
+                    "last_title": "",
+                    "error": None,
+                }
+                for scraper in scrapers
+            ],
+            "merge": {
+                "total_articles": 0,
+                "by_source": {},
+            },
+            "dedup": {
+                "status": "pending",
+                "total_input": 0,
+                "pass": None,
+                "pass_label": "",
+                "processed": 0,
+                "total": 0,
+                "candidate_pairs": 0,
+                "llm_calls": 0,
+                "duplicates_removed": 0,
+                "unique_articles": 0,
+                "last_elapsed_s": None,
+            },
+            "events": [],
+            "error": None,
+        }
+        self._last_write = 0.0
+        self.write(force=True)
+
+    def write(self, force: bool = False):
+        now = time.time()
+        if not force and now - self._last_write < 0.2:
+            return
+        self._last_write = now
+        atomic_write_json(self.path, self.payload)
+
+    def start(self, use_llm: bool):
+        self.payload["status"] = "running"
+        self.payload["started_at"] = datetime.now().isoformat()
+        self.payload["finished_at"] = None
+        self.payload["use_llm"] = use_llm
+        self.set_phase("scraping", "Scraping sources", "Starting source scrapers", 5)
+
+    def set_phase(self, phase: str, label: str, detail: str = "", overall_percent: int | None = None):
+        self.payload["current_phase"] = phase
+        self.payload["phase_label"] = label
+        self.payload["phase_detail"] = detail
+        if overall_percent is not None:
+            self.payload["overall_percent"] = max(0, min(100, overall_percent))
+        self.write()
+
+    def add_event(self, message: str):
+        self.payload["events"].append({
+            "message": message,
+            "timestamp": datetime.now().isoformat(),
+        })
+        self.payload["events"] = self.payload["events"][-12:]
+        self.write()
+
+    def _source(self, name: str) -> dict:
+        for source in self.payload["sources"]:
+            if source["name"] == name:
+                return source
+        raise KeyError(name)
+
+    def scraper_started(self, name: str, before: int):
+        source = self._source(name)
+        source.update({
+            "status": "running",
+            "before": before,
+            "processed": 0,
+            "total": 0,
+            "last_title": "",
+            "error": None,
+        })
+        self.add_event(f"{name}: started")
+
+    def scraper_progress(
+        self,
+        name: str,
+        *,
+        processed: int | None = None,
+        total: int | None = None,
+        skipped: int | None = None,
+        last_title: str | None = None,
+    ):
+        source = self._source(name)
+        if processed is not None:
+            source["processed"] = processed
+        if total is not None:
+            source["total"] = total
+        if skipped is not None:
+            source["skipped"] = skipped
+        if last_title is not None:
+            source["last_title"] = last_title
+        completed = sum(1 for item in self.payload["sources"] if item["status"] == "done")
+        current_total = source["total"] or 1
+        current_ratio = min(1.0, source["processed"] / current_total)
+        scrape_ratio = (completed + current_ratio) / max(1, len(self.payload["sources"]))
+        self.payload["overall_percent"] = min(65, int(5 + scrape_ratio * 60))
+        self.write()
+
+    def scraper_finished(self, stats: dict):
+        source = self._source(stats["source"])
+        source.update({
+            "status": "error" if stats["error"] else "done",
+            "after": stats["after"],
+            "new": stats["new"],
+            "skipped": stats["skipped"],
+            "duration": round(stats["duration"], 1),
+            "processed": max(source["processed"], source["total"]),
+            "error": stats["error"],
+        })
+        message = (
+            f"{stats['source']}: +{stats['new']} new"
+            if not stats["error"]
+            else f"{stats['source']}: error - {stats['error']}"
+        )
+        self.add_event(message)
+
+    def merge_loaded(self, total_articles: int, by_source: dict[str, int]):
+        self.payload["merge"] = {
+            "total_articles": total_articles,
+            "by_source": by_source,
+        }
+        self.set_phase("merge", "Merging source files", f"{total_articles:,} articles loaded", 70)
+
+    def dedup_started(self, total_input: int):
+        self.payload["dedup"].update({
+            "status": "running",
+            "total_input": total_input,
+            "pass": "jaccard",
+            "pass_label": "Pass 1/2: similarity scan",
+            "processed": 0,
+            "total": total_input,
+            "candidate_pairs": 0,
+            "llm_calls": 0,
+            "duplicates_removed": 0,
+            "unique_articles": 0,
+            "last_elapsed_s": None,
+        })
+        self.set_phase("dedup", "Deduplicating articles", f"Scanning {total_input:,} articles", 75)
+
+    def dedup_progress(
+        self,
+        *,
+        pass_name: str,
+        pass_label: str,
+        processed: int,
+        total: int,
+        candidate_pairs: int | None = None,
+        llm_calls: int | None = None,
+        duplicates_removed: int | None = None,
+        unique_articles: int | None = None,
+        last_elapsed_s: float | None = None,
+    ):
+        dedup = self.payload["dedup"]
+        dedup["pass"] = pass_name
+        dedup["pass_label"] = pass_label
+        dedup["processed"] = processed
+        dedup["total"] = total
+        if candidate_pairs is not None:
+            dedup["candidate_pairs"] = candidate_pairs
+        if llm_calls is not None:
+            dedup["llm_calls"] = llm_calls
+        if duplicates_removed is not None:
+            dedup["duplicates_removed"] = duplicates_removed
+        if unique_articles is not None:
+            dedup["unique_articles"] = unique_articles
+        if last_elapsed_s is not None:
+            dedup["last_elapsed_s"] = round(last_elapsed_s, 2)
+        ratio = min(1.0, processed / max(1, total))
+        base = 75 if pass_name == "jaccard" else 85
+        span = 10 if pass_name == "jaccard" else 10
+        self.payload["overall_percent"] = min(95, int(base + ratio * span))
+        self.write()
+
+    def dedup_finished(self, ds: dict):
+        self.payload["dedup"].update({
+            "status": "done",
+            "duplicates_removed": ds["removed"],
+            "unique_articles": ds["clean_count"],
+            "llm_calls": ds["llm_calls"],
+            "processed": ds["llm_calls"] or self.payload["dedup"]["processed"],
+            "total": self.payload["dedup"]["total"],
+        })
+        self.add_event(f"Deduplication: removed {ds['removed']} duplicates")
+
+    def complete(self, *, status: str, error: str | None = None):
+        self.payload["status"] = status
+        self.payload["error"] = error
+        self.payload["finished_at"] = datetime.now().isoformat()
+        self.payload["current_phase"] = "complete" if status == "success" else "error"
+        self.payload["phase_label"] = "Pipeline complete" if status == "success" else "Pipeline error"
+        self.payload["overall_percent"] = 100 if status == "success" else self.payload["overall_percent"]
+        self.payload["phase_detail"] = (
+            "Pipeline complete"
+            if status == "success"
+            else error or "Pipeline ended with an error"
+        )
+        self.write(force=True)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -129,14 +368,17 @@ class _ScrapeCapture:
     Writes everything to log file, suppresses terminal noise.
     """
     _ART_LINE = re.compile(r"^\[(\d+)/(\d+)\]")
-    _PHASE2   = re.compile(r"(\d[\d,]*)\s+new articles to scrape")
-    _SKIPPED  = re.compile(r"\((\d[\d,]*),?\s*already seen")
+    _PHASE2   = re.compile(r"(\d[\d,]*)\s+new(?: articles to scrape)?")
+    _SKIPPED  = re.compile(r"(\d[\d,]*)\s+already seen")
 
-    def __init__(self, bar: tqdm, log_file):
+    def __init__(self, bar: tqdm, log_file, source_name: str, progress: ProgressTracker | None = None):
         self.bar      = bar
         self.log_file = log_file
+        self.source_name = source_name
+        self.progress = progress
         self.skipped  = 0
         self.phase2_n = 0
+        self.processed = 0
 
     def write(self, text: str):
         t = text.strip()
@@ -150,18 +392,30 @@ class _ScrapeCapture:
             self.phase2_n = n
             self.bar.total = n
             self.bar.refresh()
+            if self.progress:
+                self.progress.scraper_progress(self.source_name, total=n)
 
         # Detect skipped count
         m = self._SKIPPED.search(t)
         if m:
             self.skipped = int(m.group(1).replace(",", ""))
+            if self.progress:
+                self.progress.scraper_progress(self.source_name, skipped=self.skipped)
 
         # Tick bar on article line
         m = self._ART_LINE.match(t)
         if m:
             self.bar.update(1)
+            self.processed = int(m.group(1))
             title = t[len(m.group(0)):].strip()[:50]
             self.bar.set_postfix_str(title, refresh=True)
+            if self.progress:
+                self.progress.scraper_progress(
+                    self.source_name,
+                    processed=self.processed,
+                    total=int(m.group(2)),
+                    last_title=title,
+                )
 
         # Log to file (no terminal spam)
         self.log_file.write("    " + strip_ansi(t) + "\n")
@@ -184,10 +438,12 @@ def count_json(path: str) -> int:
         return 0
 
 
-def run_scraper(scraper: dict, log: Logger) -> dict:
+def run_scraper(scraper: dict, log: Logger, progress: ProgressTracker | None = None) -> dict:
     name   = scraper["name"]
     before = count_json(scraper["json"])
     t0     = time.time()
+    if progress:
+        progress.scraper_started(name, before)
 
     bar = tqdm(
         total=None,
@@ -199,7 +455,7 @@ def run_scraper(scraper: dict, log: Logger) -> dict:
         leave=True,
     )
 
-    capture      = _ScrapeCapture(bar, log._f)
+    capture      = _ScrapeCapture(bar, log._f, name, progress)
     orig_stdout  = sys.stdout
     orig_cwd     = os.getcwd()
     sys.stdout   = capture
@@ -229,7 +485,7 @@ def run_scraper(scraper: dict, log: Logger) -> dict:
         f"{duration:.1f}s  {status}"
     )
 
-    return {
+    stats = {
         "source":   name,
         "before":   before,
         "after":    after,
@@ -238,6 +494,9 @@ def run_scraper(scraper: dict, log: Logger) -> dict:
         "error":    error,
         "duration": duration,
     }
+    if progress:
+        progress.scraper_finished(stats)
+    return stats
 
 
 # ─────────────────────────────────────────────────────────────
@@ -327,7 +586,12 @@ def jaccard(a: str, b: str) -> float:
 # Deduplication
 # ─────────────────────────────────────────────────────────────
 
-def deduplicate(articles: list[dict], log: Logger, use_llm: bool) -> dict:
+def deduplicate(
+    articles: list[dict],
+    log: Logger,
+    use_llm: bool,
+    progress: ProgressTracker | None = None,
+) -> dict:
     """
     Three-tier dedup:
       Tier 1 — URL exact match          → instant duplicate
@@ -348,6 +612,8 @@ def deduplicate(articles: list[dict], log: Logger, use_llm: bool) -> dict:
     llm_times = []
 
     log.log(f"\n  Comparing {total:,} articles...")
+    if progress:
+        progress.dedup_started(total)
 
     # ── Pass 1: URL + Jaccard (instant, no LLM) ───────────────
     candidates = []   # pairs to send to LLM: (i, j)
@@ -364,6 +630,14 @@ def deduplicate(articles: list[dict], log: Logger, use_llm: bool) -> dict:
 
     for i in range(total):
         bar.update(1)
+        if progress:
+            progress.dedup_progress(
+                pass_name="jaccard",
+                pass_label="Pass 1/2: similarity scan",
+                processed=i + 1,
+                total=total,
+                duplicates_removed=len(removed),
+            )
         if i in removed:
             continue
 
@@ -383,7 +657,7 @@ def deduplicate(articles: list[dict], log: Logger, use_llm: bool) -> dict:
 
             # Tier 1: exact URL
             if url_a and url_a == url_b:
-                keep, drop = (i, j) if len(desc_a) >= len(desc_b) else (j, i)
+                keep, drop = (i, j) if count_words(articles[i].get("content") or desc_a) >= count_words(articles[j].get("content") or desc_b) else (j, i)
                 removed.add(drop)
                 dup_log.append((keep, drop, 1.0, "url-exact"))
                 continue
@@ -394,7 +668,7 @@ def deduplicate(articles: list[dict], log: Logger, use_llm: bool) -> dict:
 
             # Tier 2: very high Jaccard
             if sim >= 0.75:
-                keep, drop = (i, j) if len(desc_a) >= len(desc_b) else (j, i)
+                keep, drop = (i, j) if count_words(articles[i].get("content") or desc_a) >= count_words(articles[j].get("content") or desc_b) else (j, i)
                 removed.add(drop)
                 dup_log.append((keep, drop, sim, "jaccard-high"))
                 continue
@@ -409,6 +683,15 @@ def deduplicate(articles: list[dict], log: Logger, use_llm: bool) -> dict:
     if use_llm and candidates:
         log.log(f"\n  LLM check on {len(candidates)} borderline pairs"
                 f" (parallel, 8s timeout each)...")
+        if progress:
+            progress.dedup_progress(
+                pass_name="llm",
+                pass_label="Pass 2/2: LLM similarity check",
+                processed=0,
+                total=len(candidates),
+                candidate_pairs=len(candidates),
+                duplicates_removed=len(removed),
+            )
 
         llm_bar = tqdm(
             total=len(candidates),
@@ -446,13 +729,30 @@ def deduplicate(articles: list[dict], log: Logger, use_llm: bool) -> dict:
                 if is_dup and conf >= 0.70 and i not in removed and j not in removed:
                     desc_a = articles[i].get("description", "")
                     desc_b = articles[j].get("description", "")
-                    keep, drop = (i, j) if len(desc_a) >= len(desc_b) else (j, i)
+                    keep, drop = (i, j) if count_words(articles[i].get("content") or desc_a) >= count_words(articles[j].get("content") or desc_b) else (j, i)
                     removed.add(drop)
                     dup_log.append((keep, drop, conf, "llm"))
+                if progress:
+                    progress.dedup_progress(
+                        pass_name="llm",
+                        pass_label="Pass 2/2: LLM similarity check",
+                        processed=llm_calls,
+                        total=len(candidates),
+                        candidate_pairs=len(candidates),
+                        llm_calls=llm_calls,
+                        duplicates_removed=len(removed),
+                        last_elapsed_s=elapsed,
+                    )
 
         llm_bar.close()
 
     clean = [a for idx, a in enumerate(articles) if idx not in removed]
+    if progress:
+        progress.dedup_finished({
+            "removed": len(removed),
+            "clean_count": len(clean),
+            "llm_calls": llm_calls,
+        })
 
     return {
         "total_input":    total,
@@ -560,105 +860,118 @@ def report(scrape_stats: list[dict], ds: dict,
 def main():
     wall_start = time.time()
     log = Logger(LOG_FILE)
+    progress = ProgressTracker(PROGRESS_FILE, SCRAPERS)
+    try:
+        log.log(f"\n{'='*60}")
+        log.log(c(BOLD, "  NEWS AGENCY — DATA MANAGER"))
+        log.log(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        log.log(f"{'='*60}")
 
-    log.log(f"\n{'='*60}")
-    log.log(c(BOLD, "  NEWS AGENCY — DATA MANAGER"))
-    log.log(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    log.log(f"{'='*60}")
+        # Check Ollama
+        log.log(f"\n{c(BOLD, '[0] Checking Ollama...')}")
+        use_llm = ollama_available()
+        if use_llm:
+            log.log(c(GREEN, f"  ✓ Ollama ready — {OLLAMA_MODEL}"))
+        else:
+            log.log(c(YELLOW,
+                f"  ⚠ Ollama not found — Jaccard-only dedup\n"
+                f"    To enable LLM: ollama serve && ollama pull {OLLAMA_MODEL}"
+            ))
+        progress.start(use_llm)
+        progress.add_event(f"Ollama {'ready' if use_llm else 'offline'}")
 
-    # Check Ollama
-    log.log(f"\n{c(BOLD, '[0] Checking Ollama...')}")
-    use_llm = ollama_available()
-    if use_llm:
-        log.log(c(GREEN, f"  ✓ Ollama ready — {OLLAMA_MODEL}"))
-    else:
-        log.log(c(YELLOW,
-            f"  ⚠ Ollama not found — Jaccard-only dedup\n"
-            f"    To enable LLM: ollama serve && ollama pull {OLLAMA_MODEL}"
-        ))
+        # Phase 1: scrape
+        log.log(f"\n{c(BOLD, '[1] SCRAPING')}")
+        scrape_stats = []
+        for scraper in SCRAPERS:
+            log.log(f"\n  {c(BOLD, scraper['name'])}")
+            progress.set_phase("scraping", "Scraping sources", f"Running {scraper['name']}", progress.payload["overall_percent"])
+            stats = run_scraper(scraper, log, progress)
+            scrape_stats.append(stats)
 
-    # Phase 1: scrape
-    log.log(f"\n{c(BOLD, '[1] SCRAPING')}")
-    scrape_stats = []
-    for scraper in SCRAPERS:
-        log.log(f"\n  {c(BOLD, scraper['name'])}")
-        stats = run_scraper(scraper, log)
-        scrape_stats.append(stats)
+        total_new = sum(s["new"] for s in scrape_stats)
+        log.log(f"\n  {c(GREEN, f'✓ {total_new:,} new articles collected across all sources')}")
+        progress.add_event(f"Scraping complete: +{total_new} articles")
 
-    total_new = sum(s["new"] for s in scrape_stats)
-    log.log(f"\n  {c(GREEN, f'✓ {total_new:,} new articles collected across all sources')}")
+        # Phase 2: merge
+        log.log(f"\n{c(BOLD, '[2] MERGING')}")
+        all_articles = load_all_articles()
+        log.log(f"  {len(all_articles):,} total articles loaded")
+        by_src: dict[str, int] = {}
+        for a in all_articles:
+            s = a.get("source", "Unknown")
+            by_src[s] = by_src.get(s, 0) + 1
+        for src, n in sorted(by_src.items()):
+            log.log(f"    {src:<18} {n:,}")
+        progress.merge_loaded(len(all_articles), by_src)
 
-    # Phase 2: merge
-    log.log(f"\n{c(BOLD, '[2] MERGING')}")
-    all_articles = load_all_articles()
-    log.log(f"  {len(all_articles):,} total articles loaded")
-    by_src: dict[str, int] = {}
-    for a in all_articles:
-        s = a.get("source", "Unknown")
-        by_src[s] = by_src.get(s, 0) + 1
-    for src, n in sorted(by_src.items()):
-        log.log(f"    {src:<18} {n:,}")
+        # Phase 3: deduplicate
+        log.log(f"\n{c(BOLD, '[3] DEDUPLICATION')}")
+        t_dup = time.time()
+        ds    = deduplicate(all_articles, log, use_llm, progress)
+        ds["wall_s"] = time.time() - t_dup
+        log.log(
+            f"\n  {c(GREEN, '✓')} "
+            f"{c(RED, str(ds['removed']))} duplicates removed  →  "
+            f"{c(GREEN, str(ds['clean_count']))} unique articles"
+        )
 
-    # Phase 3: deduplicate
-    log.log(f"\n{c(BOLD, '[3] DEDUPLICATION')}")
-    t_dup = time.time()
-    ds    = deduplicate(all_articles, log, use_llm)
-    ds["wall_s"] = time.time() - t_dup
-    log.log(
-        f"\n  {c(GREEN, '✓')} "
-        f"{c(RED, str(ds['removed']))} duplicates removed  →  "
-        f"{c(GREEN, str(ds['clean_count']))} unique articles"
-    )
+        # Phase 4: save
+        log.log(f"\n{c(BOLD, '[4] SAVING')}")
+        progress.set_phase("saving", "Saving output", f"Writing {ds['clean_count']:,} clean articles", 96)
+        os.makedirs(DB_DIR, exist_ok=True)
+        with open(MASTER_FILE, "w", encoding="utf-8") as f:
+            json.dump(ds["clean_articles"], f, indent=2, ensure_ascii=False)
+        log.log(c(GREEN, f"  ✓ {ds['clean_count']:,} articles → {MASTER_FILE}"))
 
-    # Phase 4: save
-    log.log(f"\n{c(BOLD, '[4] SAVING')}")
-    os.makedirs(DB_DIR, exist_ok=True)
-    with open(MASTER_FILE, "w", encoding="utf-8") as f:
-        json.dump(ds["clean_articles"], f, indent=2, ensure_ascii=False)
-    log.log(c(GREEN, f"  ✓ {ds['clean_count']:,} articles → {MASTER_FILE}"))
-
-    # Save pipeline stats for dashboard
-    total_wall = time.time() - wall_start
-    stats_payload = {
-        "run_at":          datetime.now().isoformat(),
-        "wall_seconds":    round(total_wall, 1),
-        "scrape_seconds":  round(sum(s["duration"] for s in scrape_stats), 1),
-        "llm_seconds":     round(ds["llm_total_s"], 1),
-        "llm_calls":       ds["llm_calls"],
-        "llm_model":       OLLAMA_MODEL,
-        "total_articles":  ds["clean_count"],
-        "duplicates_removed": ds["removed"],
-        "sources": [
-            {
-                "name":      s["source"],
-                "before":    s["before"],
-                "after":     s["after"],
-                "new":       s["new"],
-                "skipped":   s["skipped"],
-                "duration":  round(s["duration"], 1),
-                "error":     s["error"],
-                "timestamp": datetime.now().isoformat(),
-            }
-            for s in scrape_stats
-        ],
-        "dedup": {
-            "total_input":  ds["total_input"],
-            "duplicates":   ds["duplicates"],
-            "removed":      ds["removed"],
-            "clean_count":  ds["clean_count"],
-            "methods":      {
-                method: sum(1 for _, _, _, m in ds["dup_detail"] if m == method)
-                for method in set(m for _, _, _, m in ds["dup_detail"])
+        # Save pipeline stats for dashboard
+        total_wall = time.time() - wall_start
+        stats_payload = {
+            "run_at":          datetime.now().isoformat(),
+            "wall_seconds":    round(total_wall, 1),
+            "scrape_seconds":  round(sum(s["duration"] for s in scrape_stats), 1),
+            "llm_seconds":     round(ds["llm_total_s"], 1),
+            "llm_calls":       ds["llm_calls"],
+            "llm_model":       OLLAMA_MODEL,
+            "total_articles":  ds["clean_count"],
+            "duplicates_removed": ds["removed"],
+            "sources": [
+                {
+                    "name":      s["source"],
+                    "before":    s["before"],
+                    "after":     s["after"],
+                    "new":       s["new"],
+                    "skipped":   s["skipped"],
+                    "duration":  round(s["duration"], 1),
+                    "error":     s["error"],
+                    "timestamp": datetime.now().isoformat(),
+                }
+                for s in scrape_stats
+            ],
+            "dedup": {
+                "total_input":  ds["total_input"],
+                "duplicates":   ds["duplicates"],
+                "removed":      ds["removed"],
+                "clean_count":  ds["clean_count"],
+                "methods":      {
+                    method: sum(1 for _, _, _, m in ds["dup_detail"] if m == method)
+                    for method in set(m for _, _, _, m in ds["dup_detail"])
+                },
             },
-        },
-    }
-    with open(STATS_FILE, "w", encoding="utf-8") as f:
-        json.dump(stats_payload, f, indent=2, ensure_ascii=False)
-    log.log(c(GREEN, f"  ✓ Pipeline stats → {STATS_FILE}"))
+        }
+        with open(STATS_FILE, "w", encoding="utf-8") as f:
+            json.dump(stats_payload, f, indent=2, ensure_ascii=False)
+        log.log(c(GREEN, f"  ✓ Pipeline stats → {STATS_FILE}"))
 
-    # Phase 5: report
-    report(scrape_stats, ds, total_wall, log, use_llm)
-    log.close()
+        # Phase 5: report
+        report(scrape_stats, ds, total_wall, log, use_llm)
+        progress.set_phase("complete", "Pipeline complete", f"{ds['clean_count']:,} articles ready", 100)
+        progress.complete(status="success")
+    except Exception as exc:
+        progress.complete(status="error", error=str(exc))
+        raise
+    finally:
+        log.close()
 
 
 if __name__ == "__main__":

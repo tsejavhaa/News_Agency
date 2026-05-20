@@ -105,6 +105,7 @@ class Article:
     id:          str
     title:       str
     description: str
+    content:     str
     url:         str
     image_url:   Optional[str]
     image_path:  Optional[str]
@@ -193,6 +194,47 @@ def fetch(session: requests.Session, url: str, timeout: int = 20) -> Optional[Be
     except Exception as e:
         print(f"  [HTTP] Error fetching {url}: {e}")
         return None
+
+
+def normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def summarize_text(content: str, fallback: str = "", limit: int = 320) -> str:
+    base = normalize_text(content or fallback)
+    if not base:
+        return ""
+    sentences = re.split(r"(?<=[.!?])\s+", base)
+    summary = ""
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        candidate = f"{summary} {sentence}".strip()
+        if summary and len(candidate) > limit:
+            break
+        summary = candidate
+        if len(summary) >= limit:
+            break
+    if not summary:
+        summary = base[:limit]
+    if len(summary) > limit:
+        summary = summary[: limit - 3].rstrip() + "..."
+    return summary
+
+
+def paragraph_texts(nodes) -> list[str]:
+    texts: list[str] = []
+    seen: set[str] = set()
+    for node in nodes:
+        text = normalize_text(node.get_text(" ", strip=True))
+        if len(text) < 40:
+            continue
+        if text in seen:
+            continue
+        seen.add(text)
+        texts.append(text)
+    return texts
 
 
 # ─────────────────────────────────────────────────────────
@@ -287,41 +329,48 @@ def download_image(
 
 def scrape_article_page(
     session: requests.Session, url: str
-) -> tuple[str, Optional[str]]:
+) -> tuple[str, str, Optional[str]]:
     """
-    Returns (description, image_url) from an article page.
+    Returns (description, content, image_url) from an article page.
     """
     soup = fetch(session, url)
     if not soup:
-        return "", None
+        return "", "", None
 
-    # ── Description ──────────────────────────────────────
-    description = ""
+    content = ""
+    meta_description = ""
 
     # BBC article body: data-component="text-block"
     blocks = soup.find_all(attrs={"data-component": "text-block"})
     if blocks:
-        paras = [b.find("p") for b in blocks[:5] if b.find("p")]
-        description = " ".join(p.get_text(strip=True) for p in paras if p)
+        content = "\n\n".join(paragraph_texts(blocks))
 
     # Fallback: <article> tag paragraphs
-    if not description:
+    if not content:
         art = soup.find("article")
         if art:
-            description = " ".join(
-                p.get_text(strip=True) for p in art.find_all("p")[:5]
-            )
+            content = "\n\n".join(paragraph_texts(art.find_all("p")))
 
     # Fallback: og:description or meta description
-    if not description:
+    if not content:
         meta = (
             soup.find("meta", {"property": "og:description"}) or
             soup.find("meta", {"name": "description"})
         )
         if meta:
-            description = meta.get("content", "")
+            meta_description = normalize_text(meta.get("content", ""))
+            content = meta_description
 
-    description = re.sub(r"\s+", " ", description).strip()[:800]
+    if not meta_description:
+        meta = (
+            soup.find("meta", {"property": "og:description"}) or
+            soup.find("meta", {"name": "description"})
+        )
+        if meta:
+            meta_description = normalize_text(meta.get("content", ""))
+
+    content = normalize_text(content)
+    description = summarize_text(content, meta_description)
 
     # ── Image URL ─────────────────────────────────────────
     image_url = None
@@ -341,7 +390,7 @@ def scrape_article_page(
                 if src:
                     image_url = urljoin(url, src)
 
-    return description, image_url
+    return description, content, image_url
 
 
 # ─────────────────────────────────────────────────────────
@@ -426,8 +475,9 @@ def run():
 
         art_id = hashlib.md5(url.encode()).hexdigest()[:14]
 
-        desc, img_url = scrape_article_page(session, url)
+        desc, content, img_url = scrape_article_page(session, url)
         print(f"    [DESC] {len(desc)} chars | {'✓' if desc else '✗ empty'}")
+        print(f"    [TEXT] {len(content.split()) if content else 0} words")
         print(f"    [IMG ] {img_url[:80] if img_url else 'none'}")
 
         img_path = None
@@ -438,6 +488,7 @@ def run():
             id=art_id,
             title=title,
             description=desc,
+            content=content,
             url=url,
             image_url=img_url,
             image_path=img_path,
@@ -458,6 +509,7 @@ def run():
 
     # ── Summary ───────────────────────────────────────────
     n_desc  = sum(1 for a in new_articles if a["description"])
+    n_full  = sum(1 for a in new_articles if a.get("content"))
     n_img   = sum(1 for a in new_articles if a["image_path"])
 
     print("\n" + "=" * 60)
@@ -467,6 +519,7 @@ def run():
     print(f"  Skipped (seen)    : {skipped:,}")
     print(f"  Total in DB       : {len(all_articles):,}")
     print(f"  With description  : {n_desc}/{len(new_articles)}")
+    print(f"  With full text    : {n_full}/{len(new_articles)}")
     print(f"  With image saved  : {n_img}/{len(new_articles)}")
     print(f"  JSON              → {JSON_FILE}")
     print(f"  Images            → {IMAGE_DIR}/")

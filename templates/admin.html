@@ -55,6 +55,36 @@
             <dd id="pipeline-trigger">{{ pipeline_status.current_trigger or "n/a" }}</dd>
           </div>
         </dl>
+        <section class="pipeline-progress-panel">
+          <div class="pipeline-progress-head">
+            <strong id="pipeline-phase-label">Waiting for pipeline</strong>
+            <span id="pipeline-overall-percent">0%</span>
+          </div>
+          <div class="pipeline-progress-track" aria-hidden="true">
+            <div class="pipeline-progress-fill" id="pipeline-progress-fill"></div>
+          </div>
+          <p class="pipeline-phase-detail" id="pipeline-phase-detail">No pipeline activity yet.</p>
+          <div class="pipeline-progress-grid">
+            <div class="pipeline-progress-stat">
+              <span>New scraped</span>
+              <strong id="pipeline-total-new">0</strong>
+            </div>
+            <div class="pipeline-progress-stat">
+              <span>Loaded</span>
+              <strong id="pipeline-total-loaded">0</strong>
+            </div>
+            <div class="pipeline-progress-stat">
+              <span>Dedup removed</span>
+              <strong id="pipeline-duplicates-removed">0</strong>
+            </div>
+            <div class="pipeline-progress-stat">
+              <span>Unique output</span>
+              <strong id="pipeline-unique-total">0</strong>
+            </div>
+          </div>
+          <div class="source-progress-list" id="source-progress-list"></div>
+          <div class="analysis-progress" id="pipeline-analysis-summary"></div>
+        </section>
         <button type="button" class="primary-button" id="run-pipeline">Run pipeline now</button>
         <p class="form-status" id="pipeline-run-status"></p>
       </section>

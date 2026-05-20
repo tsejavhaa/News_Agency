@@ -145,6 +145,7 @@ class Article:
     id:           str
     title:        str
     description:  str
+    content:      str
     url:          str
     image_url:    Optional[str]
     image_path:   Optional[str]
@@ -219,6 +220,49 @@ def fetch(session: requests.Session, url: str) -> Optional[BeautifulSoup]:
         return None
 
 
+def normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def summarize_text(content: str, fallback: str = "", limit: int = 320) -> str:
+    base = normalize_text(content or fallback)
+    if not base:
+        return ""
+    sentences = re.split(r"(?<=[.!?])\s+", base)
+    summary = ""
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        candidate = f"{summary} {sentence}".strip()
+        if summary and len(candidate) > limit:
+            break
+        summary = candidate
+        if len(summary) >= limit:
+            break
+    if not summary:
+        summary = base[:limit]
+    if len(summary) > limit:
+        summary = summary[: limit - 3].rstrip() + "..."
+    return summary
+
+
+def paragraph_texts(nodes) -> list[str]:
+    texts: list[str] = []
+    seen: set[str] = set()
+    for node in nodes:
+        text = normalize_text(node.get_text(" ", strip=True))
+        if len(text) < 40:
+            continue
+        if text in seen:
+            continue
+        if text.lower().startswith(("follow us ", "sign up for ", "read more")):
+            continue
+        seen.add(text)
+        texts.append(text)
+    return texts
+
+
 # ─────────────────────────────────────────────────────────────
 # Phase 1a: RSS discovery
 # ─────────────────────────────────────────────────────────────
@@ -238,6 +282,8 @@ def discover_via_rss() -> dict[str, dict]:
                     continue
                 if not url.startswith("http"):
                     url = BASE_URL + url
+                if not is_article_url(url):
+                    continue
                 norm = SeenRegistry._norm(url)
                 if norm in pool:
                     continue
@@ -298,11 +344,11 @@ def discover_via_rss() -> dict[str, dict]:
 # ─────────────────────────────────────────────────────────────
 
 def is_article_url(url: str) -> bool:
-    # Skip tag index pages, video pages, live blogs
-    if any(s in url for s in ["/tag/", "/video/", "/liveblog/", "/gallery/"]):
-        # tag pages are index pages — skip unless they contain a date path
-        if "/tag/" in url and not re.search(r"/\d{4}/\d{1,2}/\d{1,2}/", url):
-            return False
+    # Skip tag index pages, videos, live blogs, galleries, and newsletters.
+    if any(s in url for s in ["/video/", "/liveblog/", "/gallery/", "/podcasts/", "/newsletters/"]):
+        return False
+    if "/tag/" in url and not re.search(r"/\d{4}/\d{1,2}/\d{1,2}/", url):
+        return False
     return bool(ARTICLE_RE.match(url) or ARTICLE_RE2.match(url) or ARTICLE_RE3.match(url))
 
 
@@ -355,45 +401,62 @@ def discover_via_sections(session: requests.Session, pool: dict) -> dict[str, di
 # Article page scraping
 # ─────────────────────────────────────────────────────────────
 
-def scrape_article(session: requests.Session, url: str) -> tuple[str, str, str, Optional[str]]:
+def scrape_article(session: requests.Session, url: str) -> tuple[str, str, str, str, Optional[str]]:
     """
-    Returns (description, published_at, author, image_url).
+    Returns (description, content, published_at, author, image_url).
     Al Jazeera article body uses:
       - .wysiwyg-paragraph p   (main article body)
       - p.article__paragraph   (older structure)
     """
     soup = fetch(session, url)
     if not soup:
-        return "", "", "", None
+        return "", "", "", "", None
 
-    # ── Description ──────────────────────────────────────────
-    desc = ""
+    content = ""
+    meta_description = ""
 
-    # Current Al Jazeera structure
-    paras = soup.select(".wysiwyg-paragraph p")
-    if paras:
-        desc = " ".join(p.get_text(strip=True) for p in paras[:5])
+    for sel in [
+        ".wysiwyg.wysiwyg--all-content p",
+        ".wysiwyg-paragraph",
+        ".wysiwyg-paragraph p",
+        "div[class*='wysiwyg'] p",
+        "main article p",
+        "article p",
+    ]:
+        paras = soup.select(sel)
+        if paras:
+            content = "\n\n".join(paragraph_texts(paras))
+            if content:
+                break
 
     # Older structure
-    if not desc:
+    if not content:
         paras = soup.select("p.article__paragraph")
         if paras:
-            desc = " ".join(p.get_text(strip=True) for p in paras[:5])
+            content = "\n\n".join(paragraph_texts(paras))
 
     # Generic article fallback
-    if not desc:
+    if not content:
         art = soup.find("article")
         if art:
-            desc = " ".join(p.get_text(strip=True) for p in art.find_all("p")[:5])
+            content = "\n\n".join(paragraph_texts(art.find_all("p")))
 
     # og:description fallback
-    if not desc:
+    if not content:
         meta = (soup.find("meta", {"property": "og:description"}) or
                 soup.find("meta", {"name": "description"}))
         if meta:
-            desc = meta.get("content", "")
+            meta_description = normalize_text(meta.get("content", ""))
+            content = meta_description
 
-    desc = re.sub(r"\s+", " ", desc).strip()[:800]
+    if not meta_description:
+        meta = (soup.find("meta", {"property": "og:description"}) or
+                soup.find("meta", {"name": "description"}))
+        if meta:
+            meta_description = normalize_text(meta.get("content", ""))
+
+    content = normalize_text(content)
+    desc = summarize_text(content, meta_description)
 
     # ── Published date ────────────────────────────────────────
     pub = ""
@@ -411,7 +474,7 @@ def scrape_article(session: requests.Session, url: str) -> tuple[str, str, str, 
     author_el = (soup.find(class_=re.compile("article-author|author-name|byline")) or
                  soup.find("a", {"rel": "author"}))
     if author_el:
-        author = author_el.get_text(strip=True)
+        author = normalize_text(author_el.get_text(" ", strip=True))
 
     # ── Image ─────────────────────────────────────────────────
     img_url = None
@@ -427,7 +490,7 @@ def scrape_article(session: requests.Session, url: str) -> tuple[str, str, str, 
                 if src:
                     img_url = urljoin(url, src)
 
-    return desc, pub, author, img_url
+    return desc, content, pub, author, img_url
 
 
 # ─────────────────────────────────────────────────────────────
@@ -530,24 +593,29 @@ def run():
 
         art_id = hashlib.md5(url.encode()).hexdigest()[:14]
 
-        # Use RSS data if already complete, only fetch page if missing desc or image
+        content = ""
+
+        # Always fetch the article page so we can store full text.
         desc    = item.get("description", "")
         pub     = item.get("published_at", "")
         author  = item.get("author", "")
         img_url = item.get("image_url")
 
-        if not desc or not img_url:
-            page_desc, page_pub, page_author, page_img = scrape_article(session, url)
-            if not desc:
-                desc = page_desc
-            if not pub:
-                pub = page_pub
-            if not author:
-                author = page_author
-            if not img_url:
-                img_url = page_img
+        page_desc, page_content, page_pub, page_author, page_img = scrape_article(session, url)
+        if not desc:
+            desc = page_desc
+        if page_content:
+            content = page_content
+            desc = page_desc or summarize_text(page_content, desc)
+        if not pub:
+            pub = page_pub
+        if not author:
+            author = page_author
+        if not img_url:
+            img_url = page_img
 
         print(f"    [DESC] {len(desc)} chars | {'OK' if desc else 'EMPTY'}")
+        print(f"    [TEXT] {len(content.split()) if content else 0} words")
         print(f"    [IMG ] {str(img_url or '')[:80] or 'none'}")
 
         img_path = None
@@ -558,6 +626,7 @@ def run():
             id=art_id,
             title=title,
             description=desc,
+            content=content,
             url=url,
             image_url=img_url,
             image_path=img_path,
@@ -575,6 +644,7 @@ def run():
     save_articles(all_articles)
 
     n_desc = sum(1 for a in new_articles if a["description"])
+    n_full = sum(1 for a in new_articles if a.get("content"))
     n_img  = sum(1 for a in new_articles if a["image_path"])
 
     print("\n" + "=" * 60)
@@ -584,6 +654,7 @@ def run():
     print(f"  Skipped (seen)    : {skipped:,}")
     print(f"  Total in DB       : {len(all_articles):,}")
     print(f"  With description  : {n_desc}/{len(new_articles)}")
+    print(f"  With full text    : {n_full}/{len(new_articles)}")
     print(f"  With image saved  : {n_img}/{len(new_articles)}")
     print(f"  JSON              -> {JSON_FILE}")
     print(f"  Images            -> {IMAGE_DIR}/")

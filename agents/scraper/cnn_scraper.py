@@ -139,6 +139,7 @@ class Article:
     id:           str
     title:        str
     description:  str
+    content:      str
     url:          str
     image_url:    Optional[str]
     image_path:   Optional[str]
@@ -241,6 +242,47 @@ def fetch_xml(session: requests.Session, url: str) -> Optional[str]:
     except Exception as e:
         print(f"  [XML] Error: {e}")
         return None
+
+
+def normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def summarize_text(content: str, fallback: str = "", limit: int = 320) -> str:
+    base = normalize_text(content or fallback)
+    if not base:
+        return ""
+    sentences = re.split(r"(?<=[.!?])\s+", base)
+    summary = ""
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        candidate = f"{summary} {sentence}".strip()
+        if summary and len(candidate) > limit:
+            break
+        summary = candidate
+        if len(summary) >= limit:
+            break
+    if not summary:
+        summary = base[:limit]
+    if len(summary) > limit:
+        summary = summary[: limit - 3].rstrip() + "..."
+    return summary
+
+
+def paragraph_texts(nodes) -> list[str]:
+    texts: list[str] = []
+    seen: set[str] = set()
+    for node in nodes:
+        text = normalize_text(node.get_text(" ", strip=True))
+        if len(text) < 40:
+            continue
+        if text in seen:
+            continue
+        seen.add(text)
+        texts.append(text)
+    return texts
 
 
 # ─────────────────────────────────────────────────────────────
@@ -414,39 +456,48 @@ def discover_via_sections(session: requests.Session, pool: dict) -> dict:
 # ─────────────────────────────────────────────────────────────
 
 def scrape_article(session: requests.Session, url: str) \
-        -> tuple[str, str, str, Optional[str]]:
-    """Returns (description, published_at, author, image_url)."""
+        -> tuple[str, str, str, str, Optional[str]]:
+    """Returns (description, content, published_at, author, image_url)."""
     soup = fetch_html(session, url)
     if not soup:
-        return "", "", "", None
+        return "", "", "", "", None
 
-    # ── Description ──────────────────────────────────────────
-    desc = ""
+    content = ""
+    meta_description = ""
     for sel in [
         "div.article__content p",
         "div.article-body-text p",
         "div[class*='body-text'] p",
         "div.zn-body__paragraph",
+        "div[data-component-name='paragraph']",
         "section[class*='article'] p",
+        "article p",
     ]:
         paras = soup.select(sel)
         if paras:
-            desc = " ".join(p.get_text(strip=True) for p in paras[:5])
-            if desc:
+            content = "\n\n".join(paragraph_texts(paras))
+            if content:
                 break
 
-    if not desc:
+    if not content:
         art = soup.find("article")
         if art:
-            desc = " ".join(p.get_text(strip=True)
-                            for p in art.find_all("p")[:5])
-    if not desc:
+            content = "\n\n".join(paragraph_texts(art.find_all("p")))
+    if not content:
         meta = (soup.find("meta", {"property": "og:description"}) or
                 soup.find("meta", {"name": "description"}))
         if meta:
-            desc = meta.get("content", "")
+            meta_description = normalize_text(meta.get("content", ""))
+            content = meta_description
 
-    desc = re.sub(r"\s+", " ", desc).strip()[:800]
+    if not meta_description:
+        meta = (soup.find("meta", {"property": "og:description"}) or
+                soup.find("meta", {"name": "description"}))
+        if meta:
+            meta_description = normalize_text(meta.get("content", ""))
+
+    content = normalize_text(content)
+    desc = summarize_text(content, meta_description)
 
     # ── Published date ────────────────────────────────────────
     pub = ""
@@ -481,7 +532,7 @@ def scrape_article(session: requests.Session, url: str) \
                 if src and src.startswith("http"):
                     img_url = src
 
-    return desc, pub, author, img_url
+    return desc, content, pub, author, img_url
 
 
 # ─────────────────────────────────────────────────────────────
@@ -589,19 +640,28 @@ def run():
         author  = item.get("author", "")
         img_url = item.get("image_url")
 
-        # Only fetch article page if we're missing data
-        if not desc or not img_url:
-            pg_desc, pg_pub, pg_author, pg_img = scrape_article(session, url)
-            if not desc:    desc    = pg_desc
-            if not pub:     pub     = pg_pub
-            if not author:  author  = pg_author
-            if not img_url: img_url = pg_img
+        content = ""
+
+        # Always fetch the page so we can store full text.
+        pg_desc, pg_content, pg_pub, pg_author, pg_img = scrape_article(session, url)
+        if not desc:
+            desc = pg_desc
+        if pg_content:
+            content = pg_content
+            desc = pg_desc or summarize_text(pg_content, desc)
+        if not pub:
+            pub = pg_pub
+        if not author:
+            author = pg_author
+        if not img_url:
+            img_url = pg_img
 
         # Sitemap titles are sometimes empty — use og:title if so
         if not title and img_url:
             title = url.split("/")[-2].replace("-", " ").title()
 
         print(f"    [DESC] {len(desc)} chars | {'OK' if desc else 'EMPTY'}")
+        print(f"    [TEXT] {len(content.split()) if content else 0} words")
         print(f"    [IMG ] {str(img_url or '')[:80] or 'none'}")
 
         img_path = None
@@ -612,6 +672,7 @@ def run():
             id=art_id,
             title=title,
             description=desc,
+            content=content,
             url=url,
             image_url=img_url,
             image_path=img_path,
@@ -629,6 +690,7 @@ def run():
     save_articles(all_articles)
 
     n_desc = sum(1 for a in new_articles if a["description"])
+    n_full = sum(1 for a in new_articles if a.get("content"))
     n_img  = sum(1 for a in new_articles if a["image_path"])
 
     print("\n" + "=" * 60)
@@ -638,6 +700,7 @@ def run():
     print(f"  Skipped (seen)    : {skipped:,}")
     print(f"  Total in DB       : {len(all_articles):,}")
     print(f"  With description  : {n_desc}/{len(new_articles)}")
+    print(f"  With full text    : {n_full}/{len(new_articles)}")
     print(f"  With image saved  : {n_img}/{len(new_articles)}")
     print(f"  JSON              -> {JSON_FILE}")
     print(f"  Images            -> {IMAGE_DIR}/")

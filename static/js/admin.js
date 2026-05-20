@@ -21,6 +21,10 @@ function formatLocalDate(value) {
   }).format(date);
 }
 
+function formatCount(value) {
+  return new Intl.NumberFormat().format(Number(value || 0));
+}
+
 function countdownLabel(value) {
   if (!value) return "Manual only";
   const target = new Date(value);
@@ -64,6 +68,109 @@ function renderPipelineStatus(status) {
   if (countdown) countdown.textContent = status?.is_running ? "In progress" : countdownLabel(status?.next_run_at);
   const trigger = document.getElementById("pipeline-trigger");
   if (trigger) trigger.textContent = status?.current_trigger || "n/a";
+  const runButton = document.getElementById("run-pipeline");
+  if (runButton) runButton.disabled = Boolean(status?.is_running);
+  renderPipelineProgress(status);
+}
+
+function renderPipelineProgress(status) {
+  const progress = status?.progress || {};
+  const stats = status?.stats || {};
+  const dedup = progress.dedup || {};
+  const merge = progress.merge || {};
+  const sources = Array.isArray(progress.sources) ? progress.sources : [];
+  const fallbackSources = Array.isArray(stats.sources) ? stats.sources : [];
+  const totalNew = sources.length
+    ? sources.reduce((sum, source) => sum + Number(source.new || 0), 0)
+    : fallbackSources.reduce((sum, source) => sum + Number(source.new || 0), 0);
+  const totalLoaded = Number(merge.total_articles || stats.total_articles || 0);
+  const duplicatesRemoved = Number(dedup.duplicates_removed ?? stats.duplicates_removed ?? stats?.dedup?.removed ?? 0);
+  const uniqueTotal = Number(dedup.unique_articles || stats.total_articles || stats?.dedup?.clean_count || 0);
+  const overallPercent = Number(progress.overall_percent || (status?.is_running ? 5 : uniqueTotal ? 100 : 0));
+
+  const phaseLabel = document.getElementById("pipeline-phase-label");
+  if (phaseLabel) phaseLabel.textContent = progress.phase_label || (status?.is_running ? "Pipeline running" : "Waiting for pipeline");
+  const phasePercent = document.getElementById("pipeline-overall-percent");
+  if (phasePercent) phasePercent.textContent = `${Math.max(0, Math.min(100, overallPercent))}%`;
+  const fill = document.getElementById("pipeline-progress-fill");
+  if (fill) fill.style.width = `${Math.max(0, Math.min(100, overallPercent))}%`;
+  const phaseDetail = document.getElementById("pipeline-phase-detail");
+  if (phaseDetail) {
+    phaseDetail.textContent = progress.phase_detail
+      || (status?.is_running ? "Pipeline is running." : "No pipeline activity yet.");
+  }
+
+  const totalNewNode = document.getElementById("pipeline-total-new");
+  if (totalNewNode) totalNewNode.textContent = formatCount(totalNew);
+  const totalLoadedNode = document.getElementById("pipeline-total-loaded");
+  if (totalLoadedNode) totalLoadedNode.textContent = formatCount(totalLoaded);
+  const duplicatesNode = document.getElementById("pipeline-duplicates-removed");
+  if (duplicatesNode) duplicatesNode.textContent = formatCount(duplicatesRemoved);
+  const uniqueNode = document.getElementById("pipeline-unique-total");
+  if (uniqueNode) uniqueNode.textContent = formatCount(uniqueTotal);
+
+  const sourceList = document.getElementById("source-progress-list");
+  if (sourceList) {
+    if (!sources.length && fallbackSources.length) {
+      sourceList.innerHTML = fallbackSources.map((source) => `
+        <div class="source-progress-item is-done">
+          <div class="source-progress-head">
+            <strong class="source-progress-name">${source.name}</strong>
+            <span class="source-progress-meta">+${formatCount(source.new)} new • ${Number(source.duration || 0).toFixed(1)}s</span>
+          </div>
+          <div class="source-progress-track"><div class="source-progress-fill" style="width:100%"></div></div>
+          <p class="source-progress-note">${formatCount(source.after || 0)} stored total</p>
+        </div>
+      `).join("");
+    } else {
+      sourceList.innerHTML = sources.map((source) => {
+        const total = Number(source.total || 0);
+        const processed = Number(source.processed || 0);
+        const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : (source.status === "done" ? 100 : 0);
+        const statusClass = source.status === "error" ? "is-error" : source.status === "done" ? "is-done" : "is-running";
+        const meta = total > 0
+          ? `${formatCount(processed)} / ${formatCount(total)} scraped`
+          : source.status === "done"
+            ? `${formatCount(source.new)} new`
+            : "Waiting for source list";
+        const note = source.error
+          ? source.error
+          : source.last_title
+            ? source.last_title
+            : `+${formatCount(source.new)} new • ${formatCount(source.skipped)} skipped`;
+        return `
+          <div class="source-progress-item ${statusClass}">
+            <div class="source-progress-head">
+              <strong class="source-progress-name">${source.name}</strong>
+              <span class="source-progress-meta">${meta}</span>
+            </div>
+            <div class="source-progress-track"><div class="source-progress-fill" style="width:${percent}%"></div></div>
+            <p class="source-progress-note">${note}</p>
+          </div>
+        `;
+      }).join("");
+    }
+  }
+
+  const analysisSummary = document.getElementById("pipeline-analysis-summary");
+  if (analysisSummary) {
+    if (progress.current_phase === "dedup" || dedup.total_input || dedup.unique_articles) {
+      const pairTotal = Number(dedup.total || 0);
+      const pairDone = Number(dedup.processed || 0);
+      const pairLine = pairTotal
+        ? `${dedup.pass_label || "Deduplication"}: ${formatCount(pairDone)} / ${formatCount(pairTotal)}`
+        : (dedup.pass_label || "Deduplication ready");
+      const llmLine = dedup.llm_calls
+        ? `LLM checks: ${formatCount(dedup.llm_calls)}`
+        : "LLM checks: 0";
+      const dupLine = `Removed: ${formatCount(dedup.duplicates_removed || 0)} • Unique: ${formatCount(dedup.unique_articles || 0)}`;
+      analysisSummary.textContent = `${pairLine} • ${llmLine} • ${dupLine}`;
+    } else if (stats?.dedup) {
+      analysisSummary.textContent = `Last run dedup: removed ${formatCount(stats.dedup.removed || 0)} duplicates and kept ${formatCount(stats.dedup.clean_count || 0)} unique articles.`;
+    } else {
+      analysisSummary.textContent = "Deduplication details will appear here during a run.";
+    }
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -146,5 +253,5 @@ document.addEventListener("DOMContentLoaded", () => {
   syncForm();
 
   window.setInterval(() => renderPipelineStatus(pipelineStatus), 1000);
-  window.setInterval(refreshStatus, 30000);
+  window.setInterval(refreshStatus, 2500);
 });

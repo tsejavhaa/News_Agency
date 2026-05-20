@@ -19,6 +19,7 @@ DB_DIR = ROOT / "database"
 MASTER_FILE = DB_DIR / "master_articles.json"
 SQLITE_FILE = DB_DIR / "news.db"
 PIPELINE_STATS_FILE = DB_DIR / "pipeline_stats.json"
+PIPELINE_PROGRESS_FILE = DB_DIR / "pipeline_progress.json"
 SCHEDULER_CONFIG_FILE = DB_DIR / "scheduler_config.json"
 SCHEDULER_STATE_FILE = DB_DIR / "scheduler_state.json"
 STATIC_DIR = ROOT / "static"
@@ -290,6 +291,10 @@ def load_pipeline_stats() -> dict[str, Any]:
     return load_json_file(PIPELINE_STATS_FILE, {})
 
 
+def load_pipeline_progress() -> dict[str, Any]:
+    return load_json_file(PIPELINE_PROGRESS_FILE, {})
+
+
 def load_scheduler_config() -> dict[str, Any]:
     raw = load_json_file(SCHEDULER_CONFIG_FILE, {})
     return normalize_scheduler_config(raw)
@@ -463,6 +468,7 @@ class PipelineScheduler:
         payload = dict(self.state)
         payload["config"] = dict(self.config)
         payload["stats"] = load_pipeline_stats()
+        payload["progress"] = load_pipeline_progress()
         payload["last_run_finished_label"] = format_display_ts(self.state.get("last_run_finished_at"))
         payload["last_run_started_label"] = format_display_ts(self.state.get("last_run_started_at"))
         payload["next_run_label"] = format_display_ts(self.state.get("next_run_at")) if self.state.get("next_run_at") else "Manual only"
