@@ -1,0 +1,133 @@
+.admin-shell {
+  padding-bottom: 3rem;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.2rem;
+  margin-bottom: 1.2rem;
+}
+
+.lower-grid {
+  align-items: start;
+}
+
+.admin-card {
+  padding: 1.4rem;
+}
+
+.admin-status-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0.4rem 0 1rem;
+}
+
+.admin-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+.admin-kpis div,
+.category-row,
+.mini-stats div {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 0.9rem;
+  background: var(--surface-strong);
+}
+
+.admin-kpis dt,
+.mini-stats span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.admin-kpis dd {
+  margin: 0.2rem 0 0;
+  font-weight: 700;
+}
+
+.scheduler-form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.option-block {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface-strong);
+}
+
+.field-label {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.field-label span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.field-label input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 0.8rem 0.9rem;
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.primary-button {
+  border: 0;
+  font-weight: 700;
+}
+
+.form-status {
+  min-height: 1.2rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.mini-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.mini-stats strong {
+  display: block;
+  font-family: var(--serif);
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.category-list {
+  display: grid;
+  gap: 0.7rem;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.category-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+@media (max-width: 960px) {
+  .admin-grid,
+  .mini-stats,
+  .admin-kpis {
+    grid-template-columns: 1fr;
+  }
+}

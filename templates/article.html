@@ -1,195 +1,152 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ article.title }} — The Agency</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --ink: #0d0d0d; --paper: #f7f4ef; --accent: #c8102e;
-    --muted: #666; --serif: 'Playfair Display', Georgia, serif;
-    --sans: 'Source Sans 3', system-ui, sans-serif;
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--paper); color: var(--ink); font-family: var(--sans); }
-  a { color: inherit; text-decoration: none; }
-
-  .topbar {
-    background: var(--ink); color: var(--paper);
-    padding: 0.8rem 2rem;
-    display: flex; align-items: center; gap: 1rem;
-    border-bottom: 3px solid var(--accent);
-  }
-  .topbar-logo {
-    font-family: var(--serif); font-size: 1.4rem; font-weight: 900;
-    text-transform: uppercase; letter-spacing: 0.02em;
-  }
-  .topbar-logo span { color: var(--accent); }
-  .topbar-back {
-    margin-left: auto; font-size: 0.78rem; font-weight: 600;
-    letter-spacing: 0.08em; text-transform: uppercase;
-    color: #aaa; display: flex; align-items: center; gap: 0.4rem;
-  }
-  .topbar-back:hover { color: var(--paper); }
-
-  .article-wrap { max-width: 780px; margin: 3rem auto; padding: 0 2rem; }
-
-  .article-cat {
-    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em;
-    text-transform: uppercase; color: var(--accent); margin-bottom: 0.8rem;
-  }
-  .article-title {
-    font-family: var(--serif); font-size: clamp(1.8rem, 4vw, 3rem);
-    font-weight: 700; line-height: 1.15; letter-spacing: -0.02em;
-    margin-bottom: 1.2rem;
-  }
-  .article-meta {
-    font-size: 0.8rem; color: var(--muted);
-    display: flex; flex-wrap: wrap; gap: 1.2rem; align-items: center;
-    border-top: 1px solid #d0cdc8; border-bottom: 1px solid #d0cdc8;
-    padding: 0.8rem 0; margin-bottom: 2rem;
-  }
-  .rank-pill {
-    background: var(--ink); color: var(--paper);
-    font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.45rem;
-    letter-spacing: 0.04em;
-  }
-  .grammar-ok {
-    color: #2e7d32; font-size: 0.7rem; font-weight: 600;
-    letter-spacing: 0.06em; text-transform: uppercase;
-  }
-  .grammar-warn {
-    color: #e65100; font-size: 0.7rem; font-weight: 600;
-    letter-spacing: 0.06em; text-transform: uppercase;
-  }
-
-  .article-hero-img {
-    width: 100%; aspect-ratio: 16/9; object-fit: cover;
-    display: block; margin-bottom: 2rem; border: 1px solid #d0cdc8;
-  }
-
-  .article-body {
-    font-size: 1.08rem; line-height: 1.85; color: #222;
-  }
-  .article-body p { margin-bottom: 1.3em; }
-
-  .source-link {
-    display: inline-flex; align-items: center; gap: 0.4rem;
-    margin-top: 2rem; font-size: 0.8rem; font-weight: 600;
-    letter-spacing: 0.06em; text-transform: uppercase;
-    color: var(--accent); border-bottom: 1px solid var(--accent);
-    padding-bottom: 0.1rem;
-  }
-
-  /* Related */
-  .related-wrap { max-width: 1100px; margin: 3rem auto; padding: 0 2rem; }
-  .section-head {
-    display: flex; align-items: baseline; gap: 1rem;
-    border-top: 3px solid var(--ink); padding-top: 0.6rem; margin-bottom: 1.5rem;
-  }
-  .section-head h2 {
-    font-family: var(--serif); font-size: 1.3rem; font-weight: 900;
-    text-transform: uppercase; letter-spacing: 0.04em;
-  }
-  .section-head .rule { flex: 1; border-top: 1px solid #ccc; margin-bottom: 3px; }
-  .related-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; }
-  .rel-card { border-bottom: 1px solid #d0cdc8; padding-bottom: 1.2rem; }
-  .rel-img { aspect-ratio: 16/9; overflow: hidden; background: #e0ddd8; margin-bottom: 0.7rem; }
-  .rel-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .rel-img-ph {
-    width: 100%; height: 100%; background: linear-gradient(135deg, #1a1a2e, #2d3561);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1.5rem; color: rgba(255,255,255,0.15); font-family: var(--serif);
-  }
-  .rel-cat { font-size: 0.63rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 0.35rem; }
-  .rel-title { font-family: var(--serif); font-size: 0.92rem; font-weight: 700; line-height: 1.3; }
-  .rel-title a:hover { color: var(--accent); }
-
-  footer {
-    background: var(--ink); color: #777; text-align: center;
-    padding: 1.5rem 2rem; font-size: 0.75rem; letter-spacing: 0.05em;
-    border-top: 3px solid var(--accent); margin-top: 3rem;
-  }
-  footer strong { color: var(--paper); }
-
-  @media (max-width: 700px) {
-    .related-grid { grid-template-columns: 1fr 1fr; }
-  }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ article.title }} | The Agency</title>
+  <script>
+    (() => {
+      const saved = localStorage.getItem("agency-theme");
+      if (saved) document.documentElement.dataset.theme = saved;
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/site.css">
 </head>
-<body>
-
-<div class="topbar">
-  <a href="/" class="topbar-logo">The <span>Agency</span></a>
-  <a href="/" class="topbar-back">← All News</a>
-</div>
-
-<div class="article-wrap">
-  <p class="article-cat">{{ article.category }}</p>
-  <h1 class="article-title">{{ article.title }}</h1>
-
-  <div class="article-meta">
-    <span><strong>{{ article.source }}</strong></span>
-    <span>{{ article.published_at[:16].replace('T', ' ') if article.published_at else '' }}</span>
-    <span class="rank-pill">Rank {{ '%.1f'|format(article.rank_score) }}/10</span>
-    {% if article.grammar_ok %}
-    <span class="grammar-ok">✓ Grammar OK</span>
-    {% else %}
-    <span class="grammar-warn">⚠ Grammar Notes</span>
-    {% endif %}
-    {% if article.spelling_notes %}
-    <span style="font-size:0.75rem; color:var(--muted);">{{ article.spelling_notes }}</span>
-    {% endif %}
-  </div>
-
-  {% if article.image_path %}
-  <img src="{{ article.image_path }}" alt="{{ article.title }}" class="article-hero-img">
-  {% endif %}
-
-  <div class="article-body">
-    {% for paragraph in article.content.split('\n') %}
-    {% if paragraph.strip() %}
-    <p>{{ paragraph.strip() }}</p>
-    {% endif %}
-    {% endfor %}
-  </div>
-
-  {% if article.url %}
-  <a href="{{ article.url }}" target="_blank" rel="noopener noreferrer" class="source-link">
-    Read original article ↗
-  </a>
-  {% endif %}
-</div>
-
-{% if related %}
-<div class="related-wrap">
-  <div class="section-head">
-    <h2>Related Stories</h2>
-    <div class="rule"></div>
-  </div>
-  <div class="related-grid">
-    {% for r in related %}
-    <div class="rel-card">
-      <div class="rel-img">
-        {% if r.image_path %}
-        <img src="{{ r.image_path }}" alt="{{ r.title }}" loading="lazy">
-        {% else %}
-        <div class="rel-img-ph">◈</div>
-        {% endif %}
+<body data-page="article" data-article-id="{{ article.id }}">
+  <div class="page-shell">
+    <header class="site-header article-header">
+      <div>
+        <p class="eyebrow">Expanded article view</p>
+        <a href="/" class="brand">The Agency</a>
       </div>
-      <p class="rel-cat">{{ r.category }}</p>
-      <h3 class="rel-title"><a href="/article/{{ r.id }}">{{ r.title }}</a></h3>
-    </div>
-    {% endfor %}
+      <div class="header-actions">
+        <a href="/" class="ghost-link">Back to feed</a>
+        <button type="button" class="chip-button" id="article-bookmark-button" data-article-id="{{ article.id }}">Bookmark</button>
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle color theme">Dark mode</button>
+      </div>
+    </header>
+
+    <main class="detail-layout">
+      <article class="story-column">
+        <p class="story-kicker">{{ article.source }} / {{ article.category }}</p>
+        <h1 class="story-title">{{ article.title }}</h1>
+        <div class="story-meta-row">
+          <span>{{ article.published_label }}</span>
+          <span>{{ article.reading_time_minutes }} min read</span>
+          <span>{{ article.word_count }} words</span>
+          {% if article.is_new %}
+          <span class="pill new-pill">New</span>
+          {% endif %}
+        </div>
+
+        {% if article.image_path %}
+        <img src="{{ article.image_path }}" alt="{{ article.title }}" class="story-image">
+        {% endif %}
+
+        <div class="story-body">
+          {% for paragraph in article.paragraphs %}
+          <p>{{ paragraph }}</p>
+          {% endfor %}
+        </div>
+
+        {% if article.url %}
+        <p class="story-source-link">
+          <a href="{{ article.url }}" target="_blank" rel="noopener noreferrer">Read the original source</a>
+        </p>
+        {% endif %}
+      </article>
+
+      <aside class="meta-column">
+        <section class="meta-card">
+          <p class="eyebrow">Metadata</p>
+          <dl class="meta-list">
+            <div>
+              <dt>Scraped at</dt>
+              <dd>{{ article.scraped_label }}</dd>
+            </div>
+            <div>
+              <dt>Stored path</dt>
+              <dd><code>{{ article.stored_path }}</code></dd>
+            </div>
+            <div>
+              <dt>Source</dt>
+              <dd>{{ article.source }}</dd>
+            </div>
+            <div>
+              <dt>Image path</dt>
+              <dd><code>{{ article.image_path or "Not stored" }}</code></dd>
+            </div>
+            <div>
+              <dt>URL</dt>
+              <dd class="meta-break">
+                {% if article.url %}
+                <a href="{{ article.url }}" target="_blank" rel="noopener noreferrer">{{ article.url }}</a>
+                {% else %}
+                Unavailable
+                {% endif %}
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="meta-card compact">
+          <p class="eyebrow">Pipeline pulse</p>
+          <div class="status-head">
+            <span class="status-dot {% if pipeline_status.is_running %}running{% endif %}" id="pipeline-dot"></span>
+            <strong id="pipeline-running-label">{% if pipeline_status.is_running %}Running now{% else %}Idle{% endif %}</strong>
+          </div>
+          <dl class="status-list tight">
+            <div>
+              <dt>Last run</dt>
+              <dd id="pipeline-last-run">{{ pipeline_status.last_run_finished_label }}</dd>
+            </div>
+            <div>
+              <dt>Next run</dt>
+              <dd id="pipeline-next-run">{{ pipeline_status.next_run_label }}</dd>
+            </div>
+            <div>
+              <dt>Countdown</dt>
+              <dd id="pipeline-countdown">--</dd>
+            </div>
+          </dl>
+        </section>
+      </aside>
+    </main>
+
+    {% if related %}
+    <section class="related-section">
+      <div class="results-head">
+        <div>
+          <p class="eyebrow">More coverage</p>
+          <h2>Related stories</h2>
+        </div>
+      </div>
+      <div class="article-grid compact-grid">
+        {% for item in related %}
+        <article class="news-card compact-card">
+          {% if item.image_path %}
+          <img src="{{ item.image_path }}" alt="{{ item.title }}" class="card-image">
+          {% endif %}
+          <div class="card-body">
+            <div class="card-topline">
+              <span class="card-source">{{ item.source }}</span>
+              <span class="card-reading-time">{{ item.reading_time_minutes }} min read</span>
+            </div>
+            <h3><a href="/article/{{ item.id }}">{{ item.title }}</a></h3>
+            <p>{{ item.description[:180] }}{% if item.description|length > 180 %}...{% endif %}</p>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
   </div>
-</div>
-{% endif %}
 
-<footer>
-  <strong>The Agency</strong> · AI-Powered News · Built with FastAPI + Ollama
-</footer>
-
+  <script id="page-article-data" type="application/json">{{ article | tojson }}</script>
+  <script id="pipeline-status-data" type="application/json">{{ pipeline_status | tojson }}</script>
+  <script src="/static/js/site.js"></script>
 </body>
 </html>

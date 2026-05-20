@@ -28,20 +28,18 @@ if __name__ == "__main__":
 ║  API:    http://localhost:8000/api/stats             ║
 ╠══════════════════════════════════════════════════════╣
 ║  Agents:                                             ║
-║   1. Collector  — RSS scraper + image resize         ║
-║   2. DataMgr    — SQLite + duplicate detection       ║
-║   3. Editor     — Ollama LLM categorize + rank       ║
-║   4. Webmaster  — FastAPI web server                 ║
+║   1. DataMgr    — Source scraper orchestration       ║
+║   2. Webmaster  — FastAPI web server                 ║
 ╠══════════════════════════════════════════════════════╣
-║  Ollama: ollama serve  (in separate terminal)        ║
-║  Model:  ollama pull llama3.2                        ║
+║  Scheduler: manual / every N hours / daily time      ║
+║  Data:     database/master_articles.json             ║
 ╚══════════════════════════════════════════════════════╝
     """)
 
     uvicorn.run(
         "agents.webmaster:app",
         host="0.0.0.0",
-        port=8008,
+        port=8000,
         reload=False,
         log_level="info",
     )

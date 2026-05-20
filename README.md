@@ -1,150 +1,185 @@
-# The Agency — AI-Powered News Platform
+# The Agency
 
-A multi-agent news aggregation system that collects, deduplicates, edits, and publishes news automatically.
+Editorial-style local news dashboard for scraped articles from BBC, CNN, and Al Jazeera.
 
-## Architecture
+## What it does
 
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐    ┌──────────────────┐
-│ Collector Agent │───▶│ DataManager Agent│───▶│  Editor Agent   │───▶│Webmaster Agent   │
-│                 │    │                  │    │                 │    │                  │
-│ • RSS scraping  │    │ • SQLite DB      │    │ • Ollama LLM    │    │ • FastAPI server │
-│ • Web scraping  │    │ • Deduplication  │    │ • Categorize    │    │ • Jinja2 templates│
-│ • Image resize  │    │ • URL/hash/title │    │ • Rank 0–10     │    │ • Auto-refresh   │
-│ • No videos     │    │   similarity     │    │ • Grammar check │    │ • Top-rank hero  │
-└─────────────────┘    └──────────────────┘    └─────────────────┘    └──────────────────┘
-```
+- Source-filtered feed with count badges for `BBC`, `CNN`, and `Al Jazeera`
+- Category tabs generated from article content
+- Full-text search across article titles and descriptions
+- Expanded article experience:
+  - quick-view modal on the homepage
+  - dedicated article page at `/article/{id}`
+- Metadata panel for each article:
+  - `scraped_at`
+  - stored path
+  - source
+  - image path
+  - original URL
+- Reading-time estimate based on word count
+- "New" badge for articles scraped in the last 2 hours
+- Bookmarks saved in browser `localStorage`
+- Dark/light mode toggle
+- Pipeline status widget:
+  - running right now or idle
+  - last run time
+  - next scheduled run
+  - live countdown
+- Configurable scheduler in `/admin`
+  - manual only
+  - every `N` hours
+  - specific daily time
+- Manual pipeline trigger from `/admin`
 
-## Quick Start
+## Data model used by the site
 
-### 1. Install dependencies
+The public feed is powered from:
+
+- `database/master_articles.json`
+
+The app will fall back to:
+
+- `database/news.db`
+
+if the master JSON is missing.
+
+This repo currently contains source JSON files for:
+
+- `database/bbc_articles.json`
+- `database/cnn_articles.json`
+- `database/aljazeera_articles.json`
+
+## Run
+
 ```bash
 pip install -r requirements.txt
-```
-
-### 2. Install and start Ollama (for Editor Agent LLM)
-```bash
-# Install Ollama: https://ollama.com
-ollama serve                    # Start server (separate terminal)
-ollama pull llama3.2            # Download model (~2GB)
-# Or lighter alternatives:
-# ollama pull phi3              # ~2.3GB
-# ollama pull mistral           # ~4.1GB
-# ollama pull gemma2:2b         # ~1.6GB
-```
-
-### 3. Run the application
-```bash
 python main.py
 ```
 
-### 4. Open in browser
-- **Website:** http://localhost:8000
-- **Admin:**   http://localhost:8000/admin
-- **API:**     http://localhost:8000/api/stats
+Open:
 
----
+- `http://localhost:8000/` for the feed
+- `http://localhost:8000/admin` for scheduler + pipeline controls
 
-## Agents
+## Main files
 
-### 1. Collector Agent (`agents/collector.py`)
-- Scrapes **5 RSS feeds**: BBC, Reuters, Al Jazeera, NPR, AP News
-- Extracts full article text using BeautifulSoup
-- Downloads and **resizes images** to max 800×600px JPEG (no videos)
-- Falls back to web scraping if RSS content is too short
-
-### 2. Data Manager Agent (`agents/data_manager.py`)
-- Creates and manages **SQLite database** (`database/news.db`)
-- **Duplicate detection** with 3 strategies:
-  1. Exact URL match
-  2. MD5 content hash match
-  3. Jaccard title similarity (>75% = duplicate)
-- Stores articles, images, categories, ranks, grammar status
-- Tracks scrape logs and source statistics
-
-### 3. Editor Agent (`agents/editor.py`)
-- Uses **local Ollama LLM** (llama3.2, mistral, phi3, etc.)
-- **Categorizes** into 12 categories: Politics, World, Business, Technology, Sports, Health, Science, Entertainment, Environment, Education, Crime, Other
-- **Ranks** articles 0–10 by newsworthiness
-- **Checks grammar and spelling**, adds notes
-- Gracefully falls back to keyword-based rules if Ollama is offline
-
-### 4. Webmaster Agent (`agents/webmaster.py`)
-- **FastAPI** web server with Jinja2 templates
-- **Minimal editorial design** — newspaper aesthetic
-- Top-ranked article shown in **hero section**
-- Category filtering, breaking news ticker
-- Auto-runs pipeline on startup + every 30 minutes
-- Admin dashboard at `/admin`
-
----
-
-## Configuration
-
-### Change Ollama model
-Edit `agents/editor.py`:
-```python
-OLLAMA_MODEL = "llama3.2"   # Change to "mistral", "phi3", "gemma2", etc.
+```text
+main.py
+agents/
+  data_manager.py      # scraper orchestration + pipeline stats output
+  webmaster.py         # FastAPI app, routes, scheduler, JSON loading
+templates/
+  index.html           # feed shell
+  article.html         # dedicated article page
+  admin.html           # scheduler/admin UI
+static/
+  css/site.css         # shared site styles
+  css/admin.css        # admin-specific styles
+  js/site.js           # feed, modal, bookmarks, theme, status widget
+  js/admin.js          # scheduler form + trigger controls
+database/
+  master_articles.json
+  pipeline_stats.json
+  scheduler_config.json
+  scheduler_state.json
 ```
 
-### Add news sources
-Edit `agents/collector.py`:
-```python
-NEWS_SOURCES = [
-    {"name": "My Source", "rss": "https://example.com/rss.xml", "type": "rss"},
-    ...
-]
+## Scheduler behavior
+
+Scheduler state is stored locally in:
+
+- `database/scheduler_config.json`
+- `database/scheduler_state.json`
+
+Available modes:
+
+1. `manual`
+2. `interval`
+3. `daily`
+
+Config payload shape:
+
+```json
+{
+  "mode": "interval",
+  "interval_hours": 6,
+  "daily_time": "08:00"
+}
 ```
 
-### Change scrape interval
-Edit `agents/webmaster.py`:
-```python
-schedule.every(30).minutes.do(run_pipeline)  # Change 30 to desired minutes
-```
+Notes:
 
-### Image settings
-Edit `agents/collector.py`:
-```python
-IMAGE_MAX_WIDTH = 800
-IMAGE_MAX_HEIGHT = 600
-IMAGE_QUALITY = 85
-```
+- `interval_hours` is clamped to `1-48`
+- `daily_time` uses `HH:MM` 24-hour format
+- the countdown widget polls `/api/pipeline/status`
+- manual runs are blocked while a pipeline run is already active
 
----
+## API routes
 
-## API Endpoints
+### Page routes
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | Homepage with top-ranked articles |
-| GET | `/?category=Sports` | Filter by category |
-| GET | `/article/{id}` | Article detail page |
-| GET | `/admin` | Admin dashboard |
-| GET | `/api/stats` | JSON database statistics |
-| GET | `/api/articles` | JSON article list |
-| POST | `/api/pipeline/run` | Manually trigger pipeline |
-| GET | `/api/ollama/status` | Ollama LLM status |
+- `GET /`
+- `GET /article/{article_id}`
+- `GET /admin`
 
----
+### JSON routes
 
-## Project Structure
+- `GET /api/stats`
+- `GET /api/articles`
+- `GET /api/articles/{article_id}`
+- `GET /api/pipeline/status`
+- `POST /api/pipeline/run`
+- `GET /api/scheduler/config`
+- `POST /api/scheduler/config`
 
-```
-news_agency/
-├── main.py                  # Entry point
-├── requirements.txt
-├── agents/
-│   ├── __init__.py
-│   ├── collector.py         # News Collector Agent
-│   ├── data_manager.py      # Data Manager Agent
-│   ├── editor.py            # Editor Agent (Ollama)
-│   └── webmaster.py         # Webmaster Agent (FastAPI)
-├── templates/
-│   ├── index.html           # Homepage
-│   ├── article.html         # Article detail
-│   └── admin.html           # Admin dashboard
-├── static/
-│   └── images/              # Resized article images
-└── database/
-    └── news.db              # SQLite database (auto-created)
-```
+## Search and filters
+
+Homepage filtering is client-side for fast interaction:
+
+- source filter
+- category filter
+- search query
+- bookmarks-only mode
+
+Articles are loaded once, then filtered in-browser.
+
+## Bookmarks
+
+Bookmarks are intentionally local to the browser and stored in:
+
+- `localStorage["agency-bookmarks"]`
+
+No server-side bookmark table is required.
+
+## Theme
+
+Theme preference is stored in:
+
+- `localStorage["agency-theme"]`
+
+## Pipeline stats widget
+
+The status widget reads from scheduler state plus the latest:
+
+- `database/pipeline_stats.json`
+
+Displayed fields:
+
+- running/idle state
+- last run time
+- next scheduled run
+- live countdown
+
+## Assumptions in this implementation
+
+- `master_articles.json` is the primary live feed because it currently contains the full BBC/CNN/Al Jazeera dataset
+- category tabs are inferred from article text when the dataset does not include categories
+- reading time is calculated from the stored article text or description
+- metadata "stored path" points to the source JSON file for the article's origin
+
+## Development tip
+
+After UI changes, it is useful to open the site and admin pages together:
+
+- `http://localhost:8000/`
+- `http://localhost:8000/admin`

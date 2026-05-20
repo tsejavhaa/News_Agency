@@ -1,184 +1,135 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin — The Agency</title>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
-<style>
-  :root { --ink:#0d0d0d; --paper:#f7f4ef; --accent:#c8102e; --green:#2e7d32; --muted:#666; --serif:'Playfair Display',Georgia,serif; --sans:'Source Sans 3',system-ui,sans-serif; }
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-  body{background:#111;color:#e0ddd8;font-family:var(--sans);min-height:100vh;}
-  a{color:inherit;text-decoration:none;}
-
-  .topbar{background:#000;padding:1rem 2rem;display:flex;align-items:center;gap:1rem;border-bottom:2px solid var(--accent);}
-  .logo{font-family:var(--serif);font-size:1.3rem;font-weight:900;text-transform:uppercase;}
-  .logo span{color:var(--accent);}
-  .back{margin-left:auto;font-size:0.75rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#777;}
-  .back:hover{color:#fff;}
-
-  .page{max-width:1100px;margin:2.5rem auto;padding:0 2rem;}
-  h1{font-family:var(--serif);font-size:2rem;font-weight:900;margin-bottom:2rem;letter-spacing:-0.01em;}
-
-  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:1.5rem;margin-bottom:3rem;}
-  .card{background:#1a1a1a;border:1px solid #2a2a2a;padding:1.5rem;}
-  .card-num{font-family:var(--serif);font-size:2.5rem;font-weight:700;color:var(--accent);line-height:1;}
-  .card-label{font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:#777;margin-top:0.4rem;}
-
-  .section{margin-bottom:2.5rem;}
-  .section h2{font-family:var(--serif);font-size:1.2rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:1rem;border-bottom:1px solid #2a2a2a;padding-bottom:0.6rem;}
-
-  .status-row{display:flex;align-items:center;gap:1rem;padding:0.8rem 1rem;background:#1a1a1a;border:1px solid #2a2a2a;margin-bottom:0.5rem;}
-  .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
-  .dot.green{background:#4caf50;box-shadow:0 0 6px #4caf50;}
-  .dot.red{background:#f44336;}
-  .status-label{font-size:0.82rem;}
-  .status-val{margin-left:auto;font-size:0.78rem;font-weight:600;color:#aaa;}
-
-  .cat-table{width:100%;border-collapse:collapse;}
-  .cat-table td{padding:0.55rem 0.8rem;border-bottom:1px solid #1e1e1e;font-size:0.85rem;}
-  .cat-table td:last-child{text-align:right;font-weight:600;color:var(--accent);}
-  .cat-bar{height:4px;background:#2a2a2a;margin-top:3px;}
-  .cat-bar-fill{height:100%;background:var(--accent);}
-
-  .btn{display:inline-flex;align-items:center;gap:0.5rem;padding:0.7rem 1.4rem;font-size:0.8rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;border:none;background:var(--accent);color:#fff;transition:opacity 0.2s;}
-  .btn:hover{opacity:0.85;}
-  .btn-ghost{background:transparent;border:1px solid #444;color:#aaa;}
-  .btn-ghost:hover{border-color:#aaa;color:#fff;}
-  #pipeline-result{margin-top:0.8rem;font-size:0.8rem;color:#aaa;display:none;}
-
-  .model-list{display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.5rem;}
-  .model-chip{background:#2a2a2a;padding:0.3rem 0.7rem;font-size:0.72rem;letter-spacing:0.05em;border-radius:2px;}
-  .model-chip.active{background:var(--accent);color:#fff;}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Agency | Scheduler Admin</title>
+  <script>
+    (() => {
+      const saved = localStorage.getItem("agency-theme");
+      if (saved) document.documentElement.dataset.theme = saved;
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/site.css">
+  <link rel="stylesheet" href="/static/css/admin.css">
 </head>
-<body>
+<body data-page="admin">
+  <div class="page-shell admin-shell">
+    <header class="site-header">
+      <div>
+        <p class="eyebrow">Operations</p>
+        <a href="/" class="brand">The Agency</a>
+        <p class="date-line">Scheduler, trigger controls, and pipeline visibility</p>
+      </div>
+      <div class="header-actions">
+        <a href="/" class="ghost-link">View feed</a>
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle color theme">Dark mode</button>
+      </div>
+    </header>
 
-<div class="topbar">
-  <div class="logo">The <span>Agency</span> · Admin</div>
-  <a href="/" class="back">← View Site</a>
-</div>
-
-<div class="page">
-  <h1>Dashboard</h1>
-
-  <!-- Stats cards -->
-  <div class="cards">
-    <div class="card">
-      <div class="card-num">{{ stats.total_articles }}</div>
-      <div class="card-label">Total Articles</div>
-    </div>
-    <div class="card">
-      <div class="card-num">{{ stats.published_articles }}</div>
-      <div class="card-label">Published</div>
-    </div>
-    <div class="card">
-      <div class="card-num">{{ stats.duplicates_caught }}</div>
-      <div class="card-label">Duplicates Caught</div>
-    </div>
-    <div class="card">
-      <div class="card-num">{{ stats.sources }}</div>
-      <div class="card-label">News Sources</div>
-    </div>
-  </div>
-
-  <!-- System status -->
-  <div class="section">
-    <h2>System Status</h2>
-    <div class="status-row">
-      <div class="dot green"></div>
-      <span class="status-label">FastAPI Web Server</span>
-      <span class="status-val">Running on :8000</span>
-    </div>
-    <div class="status-row">
-      <div class="dot green"></div>
-      <span class="status-label">SQLite Database</span>
-      <span class="status-val">database/news.db</span>
-    </div>
-    <div class="status-row">
-      <div class="dot {{ 'green' if ollama.available else 'red' }}"></div>
-      <span class="status-label">Ollama LLM ({{ ollama.current_model }})</span>
-      <span class="status-val">{{ 'Connected' if ollama.available else 'Not Running — Start with: ollama serve' }}</span>
-    </div>
-    <div class="status-row">
-      <div class="dot green"></div>
-      <span class="status-label">News Collector Agent</span>
-      <span class="status-val">Scheduled every 30 min</span>
-    </div>
-    <div class="status-row">
-      <div class="dot green"></div>
-      <span class="status-label">Image Processor</span>
-      <span class="status-val">Max {{ 800 }}×{{ 600 }}px · JPEG {{ 85 }}%</span>
-    </div>
-  </div>
-
-  <!-- Ollama models -->
-  {% if ollama.available_models %}
-  <div class="section">
-    <h2>Available Ollama Models</h2>
-    <div class="model-list">
-      {% for m in ollama.available_models %}
-      <span class="model-chip {{ 'active' if ollama.current_model in m }}">{{ m }}</span>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
-
-  <!-- Category breakdown -->
-  {% if stats.by_category %}
-  <div class="section">
-    <h2>Articles by Category</h2>
-    {% set max_count = stats.by_category.values() | max %}
-    <table class="cat-table">
-      {% for cat, count in stats.by_category.items() %}
-      <tr>
-        <td style="width:160px;">{{ cat }}</td>
-        <td>
-          <div class="cat-bar">
-            <div class="cat-bar-fill" style="width:{{ (count / max_count * 100)|int }}%"></div>
+    <section class="admin-grid">
+      <section class="admin-card">
+        <p class="eyebrow">Pipeline status</p>
+        <div class="admin-status-head">
+          <span class="status-dot" id="pipeline-dot"></span>
+          <strong id="pipeline-running-label">Idle</strong>
+        </div>
+        <dl class="admin-kpis">
+          <div>
+            <dt>Last run</dt>
+            <dd id="pipeline-last-run">{{ pipeline_status.last_run_finished_label }}</dd>
           </div>
-        </td>
-        <td>{{ count }}</td>
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
-  {% endif %}
+          <div>
+            <dt>Next run</dt>
+            <dd id="pipeline-next-run">{{ pipeline_status.next_run_label }}</dd>
+          </div>
+          <div>
+            <dt>Countdown</dt>
+            <dd id="pipeline-countdown">--</dd>
+          </div>
+          <div>
+            <dt>Trigger</dt>
+            <dd id="pipeline-trigger">{{ pipeline_status.current_trigger or "n/a" }}</dd>
+          </div>
+        </dl>
+        <button type="button" class="primary-button" id="run-pipeline">Run pipeline now</button>
+        <p class="form-status" id="pipeline-run-status"></p>
+      </section>
 
-  <!-- Manual trigger -->
-  <div class="section">
-    <h2>Pipeline Control</h2>
-    <p style="font-size:0.85rem;color:#777;margin-bottom:1rem;">
-      Manually trigger the full pipeline: collect → deduplicate → edit → publish
-    </p>
-    <button class="btn" onclick="triggerPipeline()">▶ Run Pipeline Now</button>
-    <a href="/api/stats" target="_blank" class="btn btn-ghost" style="margin-left:0.75rem;">API Stats ↗</a>
-    <div id="pipeline-result"></div>
-  </div>
-</div>
+      <section class="admin-card">
+        <p class="eyebrow">Scheduler</p>
+        <form id="scheduler-form" class="scheduler-form">
+          <label class="option-block">
+            <input type="radio" name="mode" value="interval">
+            <span>Every N hours</span>
+          </label>
+          <label class="field-label">
+            <span>Interval hours</span>
+            <input type="number" min="1" max="48" id="interval-hours" name="interval_hours">
+          </label>
 
-<script>
-async function triggerPipeline() {
-  const btn = document.querySelector('.btn');
-  const result = document.getElementById('pipeline-result');
-  btn.disabled = true;
-  btn.textContent = '⟳ Running...';
-  result.style.display = 'none';
-  try {
-    const res = await fetch('/api/pipeline/run', { method: 'POST' });
-    const data = await res.json();
-    result.textContent = `✓ ${data.status} at ${data.timestamp}`;
-    result.style.display = 'block';
-    result.style.color = '#4caf50';
-  } catch (e) {
-    result.textContent = `✗ Error: ${e.message}`;
-    result.style.display = 'block';
-    result.style.color = '#f44336';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '▶ Run Pipeline Now';
-  }
-}
-</script>
+          <label class="option-block">
+            <input type="radio" name="mode" value="daily">
+            <span>Specific time each day</span>
+          </label>
+          <label class="field-label">
+            <span>Daily time</span>
+            <input type="time" id="daily-time" name="daily_time">
+          </label>
+
+          <label class="option-block">
+            <input type="radio" name="mode" value="manual">
+            <span>Manual only</span>
+          </label>
+
+          <button type="submit" class="primary-button">Save scheduler</button>
+          <p class="form-status" id="scheduler-status"></p>
+        </form>
+      </section>
+    </section>
+
+    <section class="admin-grid lower-grid">
+      <section class="admin-card">
+        <p class="eyebrow">Feed snapshot</p>
+        <div class="mini-stats">
+          <div>
+            <strong>{{ stats.total_articles }}</strong>
+            <span>Total articles</span>
+          </div>
+          <div>
+            <strong>{{ stats.source_counts.bbc }}</strong>
+            <span>BBC</span>
+          </div>
+          <div>
+            <strong>{{ stats.source_counts.cnn }}</strong>
+            <span>CNN</span>
+          </div>
+          <div>
+            <strong>{{ stats.source_counts.aljazeera }}</strong>
+            <span>Al Jazeera</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="admin-card">
+        <p class="eyebrow">Categories</p>
+        <div class="category-list">
+          {% for name, count in stats.category_counts.items() %}
+          <div class="category-row">
+            <span>{{ name }}</span>
+            <strong>{{ count }}</strong>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+    </section>
+  </div>
+
+  <script id="pipeline-status-data" type="application/json">{{ pipeline_status | tojson }}</script>
+  <script id="scheduler-config-data" type="application/json">{{ scheduler_config | tojson }}</script>
+  <script src="/static/js/admin.js"></script>
 </body>
 </html>

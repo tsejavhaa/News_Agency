@@ -1,504 +1,127 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The Agency — News</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --ink: #0d0d0d;
-    --paper: #f7f4ef;
-    --accent: #c8102e;
-    --rule: #2a2a2a;
-    --muted: #666;
-    --serif: 'Playfair Display', Georgia, serif;
-    --sans: 'Source Sans 3', system-ui, sans-serif;
-    --column: 72ch;
-  }
-
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    background: var(--paper);
-    color: var(--ink);
-    font-family: var(--sans);
-    font-size: 16px;
-    line-height: 1.6;
-  }
-
-  a { color: inherit; text-decoration: none; }
-
-  /* ── Masthead ── */
-  .masthead {
-    background: var(--ink);
-    color: var(--paper);
-    padding: 0 2rem;
-    border-bottom: 3px solid var(--accent);
-  }
-  .masthead-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1rem 0 0.5rem;
-    font-family: var(--sans);
-    font-size: 0.72rem;
-    letter-spacing: 0.08em;
-    color: #999;
-    text-transform: uppercase;
-  }
-  .masthead-logo {
-    font-family: var(--serif);
-    font-size: clamp(2.2rem, 5vw, 3.8rem);
-    font-weight: 900;
-    letter-spacing: -0.02em;
-    color: var(--paper);
-    text-align: center;
-    padding: 0.5rem 0;
-    text-transform: uppercase;
-    line-height: 1;
-  }
-  .masthead-logo span { color: var(--accent); }
-
-  /* ── Category nav ── */
-  .category-nav {
-    background: var(--ink);
-    border-top: 1px solid #333;
-  }
-  .category-nav ul {
-    display: flex;
-    gap: 0;
-    list-style: none;
-    overflow-x: auto;
-    scrollbar-width: none;
-    padding: 0 2rem;
-  }
-  .category-nav ul::-webkit-scrollbar { display: none; }
-  .category-nav a {
-    display: block;
-    padding: 0.55rem 1.1rem;
-    font-family: var(--sans);
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: #aaa;
-    border-bottom: 2px solid transparent;
-    white-space: nowrap;
-    transition: color 0.2s, border-color 0.2s;
-  }
-  .category-nav a:hover { color: var(--paper); }
-  .category-nav a.active {
-    color: var(--accent);
-    border-bottom-color: var(--accent);
-  }
-
-  /* ── Layout ── */
-  .page { max-width: 1280px; margin: 0 auto; padding: 2.5rem 2rem; }
-
-  /* ── Ticker ── */
-  .ticker {
-    background: var(--accent);
-    color: #fff;
-    display: flex;
-    align-items: center;
-    overflow: hidden;
-    height: 2rem;
-  }
-  .ticker-label {
-    background: rgba(0,0,0,0.3);
-    padding: 0 0.8rem;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-  }
-  .ticker-track {
-    display: flex;
-    animation: ticker 40s linear infinite;
-    white-space: nowrap;
-  }
-  .ticker-item {
-    padding: 0 2rem;
-    font-size: 0.78rem;
-    font-weight: 600;
-  }
-  .ticker-item::after { content: "·"; margin-left: 2rem; opacity: 0.5; }
-  @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-
-  /* ── Hero ── */
-  .hero {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0;
-    border: 1px solid #d0cdc8;
-    margin-bottom: 3rem;
-    overflow: hidden;
-  }
-  .hero-image {
-    aspect-ratio: 4/3;
-    overflow: hidden;
-    background: #ccc;
-  }
-  .hero-image img {
-    width: 100%; height: 100%;
-    object-fit: cover;
-    display: block;
-    transition: transform 0.6s ease;
-  }
-  .hero:hover .hero-image img { transform: scale(1.03); }
-  .hero-image-placeholder {
-    width: 100%; height: 100%;
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-    display: flex; align-items: center; justify-content: center;
-    font-family: var(--serif);
-    font-size: 4rem;
-    color: rgba(255,255,255,0.15);
-  }
-  .hero-body {
-    padding: 2.5rem;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    border-left: 1px solid #d0cdc8;
-  }
-  .cat-badge {
-    display: inline-block;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 0.75rem;
-  }
-  .hero-title {
-    font-family: var(--serif);
-    font-size: clamp(1.6rem, 2.5vw, 2.4rem);
-    font-weight: 700;
-    line-height: 1.2;
-    margin-bottom: 1rem;
-    letter-spacing: -0.01em;
-  }
-  .hero-title a:hover { color: var(--accent); }
-  .hero-summary {
-    font-size: 1rem;
-    color: #444;
-    line-height: 1.7;
-    margin-bottom: 1.5rem;
-    flex-grow: 1;
-  }
-  .hero-meta {
-    font-size: 0.75rem;
-    color: var(--muted);
-    display: flex;
-    gap: 1rem;
-    align-items: center;
-    border-top: 1px solid #e0ddd8;
-    padding-top: 1rem;
-  }
-  .rank-badge {
-    background: var(--ink);
-    color: var(--paper);
-    font-size: 0.65rem;
-    font-weight: 700;
-    padding: 0.15rem 0.4rem;
-    letter-spacing: 0.05em;
-  }
-
-  /* ── Section headers ── */
-  .section-head {
-    display: flex;
-    align-items: baseline;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-    border-top: 3px solid var(--ink);
-    padding-top: 0.6rem;
-  }
-  .section-head h2 {
-    font-family: var(--serif);
-    font-size: 1.4rem;
-    font-weight: 900;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .section-head .rule {
-    flex: 1;
-    border-top: 1px solid #ccc;
-    margin-bottom: 3px;
-  }
-
-  /* ── Article grid ── */
-  .grid-main {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 2rem;
-    margin-bottom: 3rem;
-  }
-  .grid-wide {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 1.5rem;
-    margin-bottom: 3rem;
-  }
-
-  /* ── Card ── */
-  .card {
-    display: flex;
-    flex-direction: column;
-    border-bottom: 1px solid #d0cdc8;
-    padding-bottom: 1.5rem;
-  }
-  .card-image {
-    aspect-ratio: 16/9;
-    overflow: hidden;
-    background: #e0ddd8;
-    margin-bottom: 0.85rem;
-  }
-  .card-image img {
-    width: 100%; height: 100%;
-    object-fit: cover;
-    display: block;
-    transition: transform 0.5s ease;
-  }
-  .card:hover .card-image img { transform: scale(1.05); }
-  .card-image-placeholder {
-    width: 100%; height: 100%;
-    background: linear-gradient(135deg, #1a1a2e, #2d3561);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 2rem; color: rgba(255,255,255,0.12);
-    font-family: var(--serif);
-  }
-  .card-cat {
-    font-size: 0.65rem;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 0.4rem;
-  }
-  .card-title {
-    font-family: var(--serif);
-    font-size: 1.05rem;
-    font-weight: 700;
-    line-height: 1.3;
-    margin-bottom: 0.5rem;
-  }
-  .card-title a:hover { color: var(--accent); }
-  .card-summary {
-    font-size: 0.85rem;
-    color: #555;
-    line-height: 1.6;
-    flex-grow: 1;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .card-meta {
-    font-size: 0.7rem;
-    color: var(--muted);
-    margin-top: 0.6rem;
-    display: flex;
-    gap: 0.75rem;
-  }
-
-  /* ── Small card (4-col) ── */
-  .card-sm .card-title { font-size: 0.9rem; }
-  .card-sm .card-summary { -webkit-line-clamp: 2; }
-
-  /* ── Stats bar ── */
-  .stats-bar {
-    background: var(--ink);
-    color: var(--paper);
-    padding: 1rem 2rem;
-    display: flex;
-    gap: 2.5rem;
-    font-size: 0.75rem;
-    letter-spacing: 0.04em;
-  }
-  .stat { display: flex; flex-direction: column; gap: 0.1rem; }
-  .stat-num { font-family: var(--serif); font-size: 1.5rem; font-weight: 700; line-height: 1; color: var(--accent); }
-  .stat-label { text-transform: uppercase; letter-spacing: 0.08em; color: #888; }
-
-  /* ── Footer ── */
-  footer {
-    background: var(--ink);
-    color: #777;
-    text-align: center;
-    padding: 1.5rem 2rem;
-    font-size: 0.75rem;
-    letter-spacing: 0.05em;
-    border-top: 3px solid var(--accent);
-    margin-top: 3rem;
-  }
-  footer strong { color: var(--paper); }
-
-  @media (max-width: 900px) {
-    .hero { grid-template-columns: 1fr; }
-    .hero-body { border-left: none; border-top: 1px solid #d0cdc8; }
-    .grid-main { grid-template-columns: 1fr 1fr; }
-    .grid-wide { grid-template-columns: 1fr 1fr; }
-  }
-  @media (max-width: 600px) {
-    .grid-main, .grid-wide { grid-template-columns: 1fr; }
-    .masthead { padding: 0 1rem; }
-    .page { padding: 1.5rem 1rem; }
-    .stats-bar { flex-wrap: wrap; gap: 1rem; }
-  }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Agency</title>
+  <script>
+    (() => {
+      const saved = localStorage.getItem("agency-theme");
+      if (saved) document.documentElement.dataset.theme = saved;
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/site.css">
 </head>
-<body>
-
-<!-- Masthead -->
-<header class="masthead">
-  <div class="masthead-top">
-    <span>{{ now.strftime('%A, %B %d, %Y') }}</span>
-    <span>AI-Powered News Aggregation</span>
-    <span>{{ stats.total_articles }} Articles in Database</span>
-  </div>
-  <div class="masthead-logo">The <span>Agency</span></div>
-</header>
-
-<!-- Category Navigation -->
-<nav class="category-nav">
-  <ul>
-    {% for cat in categories %}
-    <li><a href="/?category={{ cat }}" class="{{ 'active' if cat == active_category }}">{{ cat }}</a></li>
-    {% endfor %}
-  </ul>
-</nav>
-
-<!-- Ticker -->
-{% if articles %}
-<div class="ticker">
-  <div class="ticker-label">Breaking</div>
-  <div class="ticker-track">
-    {% for a in articles[:8] %}
-    <span class="ticker-item">{{ a.title }}</span>
-    {% endfor %}
-    {% for a in articles[:8] %}
-    <span class="ticker-item">{{ a.title }}</span>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
-<!-- Stats Bar -->
-<div class="stats-bar">
-  <div class="stat"><span class="stat-num">{{ stats.published_articles }}</span><span class="stat-label">Published</span></div>
-  <div class="stat"><span class="stat-num">{{ stats.sources }}</span><span class="stat-label">Sources</span></div>
-  <div class="stat"><span class="stat-num">{{ stats.duplicates_caught }}</span><span class="stat-label">Duplicates Caught</span></div>
-  <div class="stat"><span class="stat-num">{{ stats.by_category | length }}</span><span class="stat-label">Categories</span></div>
-</div>
-
-<!-- Main Content -->
-<main class="page">
-
-  <!-- Hero -->
-  {% if hero %}
-  <a href="/article/{{ hero.id }}" style="display:block;">
-    <article class="hero">
-      <div class="hero-image">
-        {% if hero.image_path %}
-        <img src="{{ hero.image_path }}" alt="{{ hero.title }}" loading="eager">
-        {% else %}
-        <div class="hero-image-placeholder">⊞</div>
-        {% endif %}
+<body data-page="home">
+  <div class="page-shell">
+    <header class="site-header">
+      <div>
+        <p class="eyebrow">Independent feed monitor</p>
+        <a href="/" class="brand">The Agency</a>
+        <p class="date-line">{{ today_label }}</p>
       </div>
-      <div class="hero-body">
-        <span class="cat-badge">{{ hero.category }} · Top Story</span>
-        <h1 class="hero-title">{{ hero.title }}</h1>
-        <p class="hero-summary">{{ hero.summary or hero.content[:280] }}</p>
-        <div class="hero-meta">
-          <span>{{ hero.source }}</span>
-          <span>{{ hero.published_at[:10] if hero.published_at else '' }}</span>
-          <span class="rank-badge">Score {{ '%.1f'|format(hero.rank_score) }}</span>
+      <div class="header-actions">
+        <a href="/admin" class="ghost-link">Scheduler Admin</a>
+        <button type="button" class="chip-button" id="bookmark-toggle">Bookmarks only <span id="bookmark-count">0</span></button>
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle color theme">Dark mode</button>
+      </div>
+    </header>
+
+    <section class="top-grid">
+      <div class="search-panel">
+        <div class="search-header">
+          <div>
+            <p class="eyebrow">Search and filter</p>
+            <h1>Live news feed across BBC, CNN, and Al Jazeera</h1>
+          </div>
+          <div class="stats-inline">
+            <span>{{ stats.total_articles }} articles</span>
+            <span>{{ stats.new_last_2h }} new in last 2h</span>
+            <span>Updated {{ stats.last_updated }}</span>
+          </div>
         </div>
+        <label class="search-box" for="search-input">
+          <span>Search titles and descriptions</span>
+          <input id="search-input" type="search" placeholder="Search for topics, places, people..." autocomplete="off">
+        </label>
+        <div class="active-filters" id="active-filters"></div>
       </div>
+
+      <aside class="status-panel" id="pipeline-widget">
+        <p class="eyebrow">Pipeline status</p>
+        <div class="status-head">
+          <span class="status-dot" id="pipeline-dot"></span>
+          <strong id="pipeline-running-label">Idle</strong>
+        </div>
+        <dl class="status-list">
+          <div>
+            <dt>Last run</dt>
+            <dd id="pipeline-last-run">{{ pipeline_status.last_run_finished_label }}</dd>
+          </div>
+          <div>
+            <dt>Next run</dt>
+            <dd id="pipeline-next-run">{{ pipeline_status.next_run_label }}</dd>
+          </div>
+          <div>
+            <dt>Countdown</dt>
+            <dd id="pipeline-countdown">--</dd>
+          </div>
+          <div>
+            <dt>Schedule</dt>
+            <dd id="pipeline-schedule-mode">{{ pipeline_status.config.mode }}</dd>
+          </div>
+        </dl>
+      </aside>
+    </section>
+
+    <section class="filter-strip">
+      <div class="filter-group">
+        <p class="filter-label">Source</p>
+        <div class="tab-row" id="source-tabs"></div>
+      </div>
+      <div class="filter-group">
+        <p class="filter-label">Category</p>
+        <div class="tab-row category-row" id="category-tabs"></div>
+      </div>
+    </section>
+
+    <main class="content-stack">
+      <section id="hero-slot"></section>
+
+      <section class="results-head">
+        <div>
+          <p class="eyebrow">News feed</p>
+          <h2 id="results-title">Top stories</h2>
+        </div>
+        <div class="results-meta">
+          <span id="results-count">0 results</span>
+          <button type="button" class="ghost-link button-reset" id="clear-filters">Clear filters</button>
+        </div>
+      </section>
+
+      <section class="article-grid" id="article-grid"></section>
+      <section class="empty-state hidden" id="empty-state">
+        <h3>No articles match this view.</h3>
+        <p>Try widening the source filter, clearing search, or leaving bookmarks mode.</p>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-shell hidden" id="article-modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal="true"></div>
+    <article class="modal-card">
+      <button type="button" class="modal-close" data-close-modal="true" aria-label="Close article">Close</button>
+      <div class="modal-content" id="modal-content"></div>
     </article>
-  </a>
-  {% endif %}
-
-  <!-- Top Stories Grid (3 col) -->
-  {% if articles %}
-  <div class="section-head">
-    <h2>Top Stories</h2>
-    <div class="rule"></div>
   </div>
-  <div class="grid-main">
-    {% for article in articles[:6] %}
-    <article class="card">
-      <div class="card-image">
-        {% if article.image_path %}
-        <img src="{{ article.image_path }}" alt="{{ article.title }}" loading="lazy">
-        {% else %}
-        <div class="card-image-placeholder">◈</div>
-        {% endif %}
-      </div>
-      <span class="card-cat">{{ article.category }}</span>
-      <h2 class="card-title"><a href="/article/{{ article.id }}">{{ article.title }}</a></h2>
-      <p class="card-summary">{{ article.summary or article.content[:200] }}</p>
-      <div class="card-meta">
-        <span>{{ article.source }}</span>
-        <span>{{ article.published_at[:10] if article.published_at else '' }}</span>
-      </div>
-    </article>
-    {% endfor %}
-  </div>
-  {% endif %}
 
-  <!-- More News (4 col) -->
-  {% if articles|length > 6 %}
-  <div class="section-head">
-    <h2>More News</h2>
-    <div class="rule"></div>
-  </div>
-  <div class="grid-wide">
-    {% for article in articles[6:] %}
-    <article class="card card-sm">
-      <div class="card-image">
-        {% if article.image_path %}
-        <img src="{{ article.image_path }}" alt="{{ article.title }}" loading="lazy">
-        {% else %}
-        <div class="card-image-placeholder">◈</div>
-        {% endif %}
-      </div>
-      <span class="card-cat">{{ article.category }}</span>
-      <h3 class="card-title"><a href="/article/{{ article.id }}">{{ article.title }}</a></h3>
-      <p class="card-summary">{{ article.summary or article.content[:150] }}</p>
-      <div class="card-meta">
-        <span>{{ article.source }}</span>
-      </div>
-    </article>
-    {% endfor %}
-  </div>
-  {% endif %}
-
-  {% if not hero and not articles %}
-  <div style="text-align:center; padding:6rem 2rem;">
-    <p style="font-family:var(--serif); font-size:1.4rem; color:var(--muted);">
-      Collecting news… Check back in a moment.
-    </p>
-    <p style="margin-top:1rem; color:var(--muted); font-size:0.85rem;">
-      The pipeline runs automatically on startup and every 30 minutes.
-    </p>
-  </div>
-  {% endif %}
-
-</main>
-
-<footer>
-  <strong>The Agency</strong> · AI-Powered News · 
-  {{ stats.sources }} sources · {{ stats.published_articles }} articles · 
-  Built with FastAPI + Ollama
-</footer>
-
+  <script id="articles-data" type="application/json">{{ articles | tojson }}</script>
+  <script id="initial-filters-data" type="application/json">{{ initial_filters | tojson }}</script>
+  <script id="pipeline-status-data" type="application/json">{{ pipeline_status | tojson }}</script>
+  <script id="source-labels-data" type="application/json">{{ source_labels | tojson }}</script>
+  <script src="/static/js/site.js"></script>
 </body>
 </html>
