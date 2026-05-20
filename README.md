@@ -2,6 +2,8 @@
 
 Editorial-style local news dashboard for scraped articles from BBC, CNN, and Al Jazeera.
 
+![Presentation Demo](./static/news.gif)
+
 ## What it does
 
 - Source-filtered feed with count badges for `BBC`, `CNN`, and `Al Jazeera`
@@ -30,8 +32,6 @@ Editorial-style local news dashboard for scraped articles from BBC, CNN, and Al 
   - every `N` hours
   - specific daily time
 - Manual pipeline trigger from `/admin`
-
-![](/static/news_agency_video.mp4)
 
 ## Data model used by the site
 
